@@ -5,6 +5,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
@@ -16,15 +17,17 @@ import java.util.Map;
 @Service
 public class AiServiceClient {
 
-    private static final long HEALTH_CACHE_MS = 10_000;
-
     /** Long read timeout — used only for model training, which can take minutes. */
     private final RestTemplate restTemplate;
     /** Short read timeout — used for interactive calls so slow AI fails fast. */
     private final RestTemplate interactiveRestTemplate;
     private final AiServiceProperties properties;
-    private volatile boolean cachedHealthy;
-    private volatile long cachedHealthyAtMs;
+    /**
+     * Last-known AI health, refreshed by a background scheduler (see {@link #refreshHealth()}).
+     * Reads never hit the network, so page loads never block on AI responsiveness.
+     * Optimistic at startup until the first probe runs.
+     */
+    private volatile boolean cachedHealthy = true;
 
     public AiServiceClient(@Qualifier("aiRestTemplate") RestTemplate restTemplate,
                            @Qualifier("aiInteractiveRestTemplate") RestTemplate interactiveRestTemplate,
@@ -34,12 +37,17 @@ public class AiServiceClient {
         this.properties = properties;
     }
 
+    /** Non-blocking: returns the latest health probed in the background. */
     public boolean isHealthy() {
-        long now = System.currentTimeMillis();
-        if (now - cachedHealthyAtMs < HEALTH_CACHE_MS) {
-            return cachedHealthy;
-        }
-        cachedHealthyAtMs = now;
+        return cachedHealthy;
+    }
+
+    /**
+     * Periodically probes the AI service so {@link #isHealthy()} stays current without
+     * ever blocking a request thread (previously every caller could stall on this ping).
+     */
+    @Scheduled(fixedDelay = 10_000L, initialDelay = 0L)
+    public void refreshHealth() {
         try {
             @SuppressWarnings("unchecked")
             Map<String, Object> response = interactiveRestTemplate.getForObject(
@@ -48,7 +56,6 @@ public class AiServiceClient {
         } catch (RestClientException e) {
             cachedHealthy = false;
         }
-        return cachedHealthy;
     }
 
     @SuppressWarnings("unchecked")
