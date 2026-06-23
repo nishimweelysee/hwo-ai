@@ -255,22 +255,55 @@ export default function AIPredictionPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- initial load only
   }, []);
 
+  const pollTrainingStatus = async (): Promise<{
+    status: string;
+    result?: Record<string, unknown>;
+    error?: string;
+  }> => {
+    const deadline = Date.now() + 6 * 60 * 1000; // up to 6 minutes
+    while (Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 3000));
+      try {
+        const res = await apiFetch("/api/predictions/training-status");
+        if (!res.ok) continue;
+        const s = await res.json();
+        if (s.status === "completed" || s.status === "failed") return s;
+      } catch {
+        // transient issue while polling — keep trying until the deadline
+      }
+    }
+    return { status: "failed", error: "Training timed out — please try again." };
+  };
+
   const handleTrain = async () => {
     setTraining(true);
     setLastTrainSummary(null);
     try {
-      const res = await apiFetch("/api/predictions/retrain", { method: "POST" });
-      let data: Record<string, unknown> = {};
-      try {
-        data = await res.json();
-      } catch {
-        alert("Training failed — invalid response from server. Restart the backend and try again.");
+      const startRes = await apiFetch("/api/predictions/retrain", { method: "POST" });
+      if (!startRes.ok && startRes.status !== 202) {
+        let startErr: Record<string, unknown> = {};
+        try {
+          startErr = await startRes.json();
+        } catch {
+          // ignore non-JSON error body
+        }
+        alert(typeof startErr.error === "string" ? startErr.error : "Training failed");
         return;
       }
-      if (!res.ok) {
-        alert(typeof data.error === "string" ? data.error : "Training failed");
+      setLastTrainSummary("Training ensemble model… this can take 1–2 minutes.");
+
+      // Training runs in the background; poll for completion so the request never
+      // stays open long enough to hit the ~30s proxy timeout.
+      const status = await pollTrainingStatus();
+      if (status.status !== "completed") {
+        alert(
+          typeof status.error === "string" && status.error
+            ? status.error
+            : "Training failed — please try again."
+        );
         return;
       }
+      const data = (status.result ?? {}) as Record<string, unknown>;
 
       setModelTrained(true);
       setLastTrainSummary(

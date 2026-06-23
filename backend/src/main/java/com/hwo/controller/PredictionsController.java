@@ -32,13 +32,14 @@ public class PredictionsController {
         if (!currentUserService.canManageSettings()) {
             return PermissionResponses.settingsRequired();
         }
-        try {
-            return ResponseEntity.ok(predictionService.trainAllModels());
-        } catch (IllegalStateException | IllegalArgumentException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", "Training failed: " + e.getMessage()));
-        }
+        // Training can take minutes; run it in the background and let the client poll
+        // /predictions/training-status so the request never hits the 30s proxy timeout.
+        return ResponseEntity.accepted().body(predictionService.requestTraining());
+    }
+
+    @GetMapping("/predictions/training-status")
+    public ResponseEntity<Map<String, Object>> trainingStatus() {
+        return ResponseEntity.ok(predictionService.getTrainingStatus());
     }
 
     @GetMapping("/predictions/models")

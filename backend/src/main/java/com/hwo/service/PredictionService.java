@@ -14,6 +14,8 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
 
 @Service
@@ -30,6 +32,19 @@ public class PredictionService {
     private final SettingsService settingsService;
     private final ObjectMapper objectMapper;
 
+    /**
+     * Training runs off the request thread so the (potentially minutes-long) call never
+     * holds an HTTP request open — the Next.js proxy aborts proxied requests at 30s,
+     * which previously surfaced as "invalid response from server" in the UI.
+     */
+    private final ExecutorService trainingExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "model-training");
+        t.setDaemon(true);
+        return t;
+    });
+    private volatile Map<String, Object> trainingStatus = Map.of("status", "idle");
+    private volatile boolean trainingInProgress = false;
+
     public PredictionService(AiServiceClient aiServiceClient,
                              PredictionModelRepository predictionModelRepository,
                              WorkloadRecordRepository workloadRecordRepository,
@@ -42,6 +57,51 @@ public class PredictionService {
         this.departmentRepository = departmentRepository;
         this.settingsService = settingsService;
         this.objectMapper = objectMapper;
+    }
+
+    /**
+     * Kicks off training in the background and returns immediately. Callers poll
+     * {@link #getTrainingStatus()} for completion. Only one training runs at a time.
+     */
+    public synchronized Map<String, Object> requestTraining() {
+        if (trainingInProgress) {
+            Map<String, Object> running = new LinkedHashMap<>();
+            running.put("status", "running");
+            return running;
+        }
+        trainingInProgress = true;
+        Map<String, Object> running = new LinkedHashMap<>();
+        running.put("status", "running");
+        running.put("startedAt", LocalDateTime.now().toString());
+        trainingStatus = running;
+
+        trainingExecutor.submit(() -> {
+            try {
+                Map<String, Object> result = trainAllModels();
+                Map<String, Object> done = new LinkedHashMap<>();
+                done.put("status", "completed");
+                done.put("result", result);
+                done.put("finishedAt", LocalDateTime.now().toString());
+                trainingStatus = done;
+            } catch (Exception e) {
+                Map<String, Object> failed = new LinkedHashMap<>();
+                failed.put("status", "failed");
+                failed.put("error", e.getMessage() != null ? e.getMessage() : "Training failed");
+                failed.put("finishedAt", LocalDateTime.now().toString());
+                trainingStatus = failed;
+            } finally {
+                trainingInProgress = false;
+            }
+        });
+
+        Map<String, Object> started = new LinkedHashMap<>();
+        started.put("status", "started");
+        return started;
+    }
+
+    /** Current/last training status: idle | running | completed (+result) | failed (+error). */
+    public Map<String, Object> getTrainingStatus() {
+        return trainingStatus;
     }
 
     public Map<String, Object> getPredictions(String modelId) {
