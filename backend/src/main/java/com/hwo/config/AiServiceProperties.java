@@ -12,6 +12,12 @@ public class AiServiceProperties {
     private int connectTimeoutMs = 5_000;
     /** Read timeout for AI service HTTP calls (ms). Training can take several minutes on large data. */
     private int readTimeoutMs = 300_000;
+    /**
+     * Read timeout for interactive AI calls (health, predict, forecast) in ms.
+     * Kept short so page loads fail fast and fall back to the local model instead
+     * of holding request threads for minutes when the AI service is slow/unreachable.
+     */
+    private int interactiveReadTimeoutMs = 8_000;
 
     public String getUrl() {
         return url;
@@ -35,5 +41,13 @@ public class AiServiceProperties {
 
     public void setReadTimeoutMs(int readTimeoutMs) {
         this.readTimeoutMs = readTimeoutMs;
+    }
+
+    public int getInteractiveReadTimeoutMs() {
+        return interactiveReadTimeoutMs;
+    }
+
+    public void setInteractiveReadTimeoutMs(int interactiveReadTimeoutMs) {
+        this.interactiveReadTimeoutMs = interactiveReadTimeoutMs;
     }
 }
