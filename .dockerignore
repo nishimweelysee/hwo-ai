@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+.gitignore
+*.md
+docs
+mobile
+sample-data
+scripts
+.env
+.env.*
+!.env.production.example
+backend/target
+**/__pycache__
+**/*.pyc
+.DS_Store

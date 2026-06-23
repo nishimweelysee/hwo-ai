@@ -1,0 +1,6 @@
+# Development profile - use H2 if PostgreSQL not available
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/hwo
+    username: postgres
+    password: postgres

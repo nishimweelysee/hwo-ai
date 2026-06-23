@@ -1,0 +1,43 @@
+{
+  "expo": {
+    "name": "HWO Mobile",
+    "slug": "hwo-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "hwo",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "backgroundColor": "#0d9488"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.hwo.mobile"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0d9488"
+      },
+      "package": "com.hwo.mobile"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": "Allow HWO to use Face ID for secure login."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#0d9488"
+        }
+      ],
+      "expo-asset",
+      "expo-font"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

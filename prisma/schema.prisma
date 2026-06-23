@@ -1,0 +1,301 @@
+// Health Workforce Optimizer - Database Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  emailVerified DateTime?
+  password      String
+  name          String
+  role          String    // Administrator, Analyst, Manager, Viewer
+  organization  String?
+  mfaEnabled    Boolean   @default(false)
+  mfaSecret    String?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  lastLoginAt   DateTime?
+  sessions      Session[]
+  accounts      Account[]
+  auditLogs     AuditLog[]
+  profile       UserProfile?
+  activities    UserActivity[]
+}
+
+model UserProfile {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phone     String?
+  department String?
+  preferences Json?   // Dashboard preferences, etc.
+  updatedAt DateTime @updatedAt
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at       Int?
+  token_type       String?
+  scope            String?
+  id_token         String?
+  session_state    String?
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expires      DateTime
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  token     String   @unique
+  expires   DateTime
+  createdAt DateTime @default(now())
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  units       Unit[]
+}
+
+model Unit {
+  id             String   @id @default(cuid())
+  name           String
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  departmentId   String?
+}
+
+model Department {
+  id          String   @id @default(cuid())
+  name        String
+  staffCount  Int      @default(0)
+  workload    Float    @default(0)
+  organizationId String?
+  staff       Staff[]
+  workloadRecords WorkloadRecord[]
+}
+
+model Staff {
+  id           String   @id @default(cuid())
+  name         String
+  email        String?
+  role         String   // Physician, RN, etc.
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+  skills       StaffSkill[]
+  schedules    Schedule[]
+  wellness     WellnessRecord[]
+  certifications Certification[]
+  leaveRequests LeaveRequest[]
+  onCallSchedules OnCallSchedule[]
+  wellnessInterventions WellnessIntervention[]
+}
+
+model StaffSkill {
+  id       String @id @default(cuid())
+  staffId  String
+  staff    Staff  @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  skillId  String
+  skill    Skill  @relation(fields: [skillId], references: [id])
+  level    String // Beginner, Intermediate, Expert
+}
+
+model Skill {
+  id          String   @id @default(cuid())
+  name        String
+  category    String?
+  staffSkills StaffSkill[]
+}
+
+model Certification {
+  id         String   @id @default(cuid())
+  staffId    String
+  staff      Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  name       String
+  expiryDate DateTime
+  status     String   @default("active")
+}
+
+model WorkloadRecord {
+  id           String   @id @default(cuid())
+  departmentId String
+  department   Department @relation(fields: [departmentId], references: [id])
+  date         DateTime
+  hour         Int?
+  workload     Float
+  patientVolume Int?
+}
+
+model Schedule {
+  id        String   @id @default(cuid())
+  staffId   String
+  staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  date      DateTime
+  shift     String   // Day, Evening, Night
+  status    String   @default("scheduled")
+  swapRequested Boolean @default(false)
+}
+
+model WellnessRecord {
+  id        String   @id @default(cuid())
+  staffId   String
+  staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  date      DateTime
+  overtime  Float    @default(0)
+  riskLevel String?  // low, medium, high
+  score     Float?
+}
+
+model Resource {
+  id          String   @id @default(cuid())
+  name        String
+  type        String   // Ventilator, ICU Bed, OR, etc.
+  available   Int
+  inUse       Int      @default(0)
+  departmentId String?
+}
+
+model PredictionModel {
+  id          String   @id @default(cuid())
+  name        String
+  type        String
+  accuracy    Float?
+  mae         Float?
+  rmse        Float?
+  lastTrained DateTime?
+  config      String?  // JSON config
+}
+
+model Report {
+  id          String   @id @default(cuid())
+  type        String   // operational, strategic, compliance
+  name        String
+  generatedAt DateTime @default(now())
+  format      String?
+  url         String?
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  type      String   // read, write, export, approve, import
+  resource  String?
+  details   String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+}
+
+model UserActivity {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  details   String?
+  createdAt DateTime @default(now())
+}
+
+model DataImport {
+  id          String   @id @default(cuid())
+  filename    String
+  type        String   // staff, shift, patient
+  recordCount Int
+  validCount  Int
+  duplicateCount Int   @default(0)
+  errorCount  Int     @default(0)
+  status      String  @default("completed")
+  importedAt  DateTime @default(now())
+}
+
+model DataSettings {
+  id              String   @id @default(cuid())
+  retentionYears  Int      @default(7)
+  anonymization   Boolean  @default(true)
+  backupFrequency String   @default("daily")
+  updatedAt       DateTime @updatedAt
+}
+
+model LeaveRequest {
+  id        String   @id @default(cuid())
+  staffId   String
+  staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  startDate DateTime
+  endDate   DateTime
+  type      String   // vacation, sick, personal
+  status    String   @default("pending") // pending, approved, rejected
+  createdAt DateTime @default(now())
+}
+
+model OnCallSchedule {
+  id        String   @id @default(cuid())
+  staffId   String
+  staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  date      DateTime
+  startTime String
+  endTime   String
+  status    String   @default("scheduled")
+}
+
+model ScheduledReport {
+  id          String   @id @default(cuid())
+  type        String
+  format      String
+  frequency   String   // daily, weekly, monthly
+  recipients  String?  // JSON array of emails
+  nextRun     DateTime?
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+}
+
+model WellnessIntervention {
+  id          String   @id @default(cuid())
+  staffId     String
+  staff       Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  type        String   // rest, reduce hours, counseling
+  status      String   @default("pending")
+  recommendedAt DateTime @default(now())
+  completedAt DateTime?
+}
+
+model ComplianceRecord {
+  id          String   @id @default(cuid())
+  requirement String
+  status      String
+  value       String?
+  recordedAt  DateTime @default(now())
+}
+
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  email     String
+  success   Boolean
+  ipAddress String?
+  createdAt DateTime @default(now())
+}

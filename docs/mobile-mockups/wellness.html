@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=390, initial-scale=1" />
+  <title>HWO Mobile — Wellness</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; width: 390px; min-height: 844px; background: #f8fafc; color: #1e293b; }
+    .status { height: 44px; background: #0f766e; }
+    .header { background: #0f766e; color: white; padding: 16px 20px 24px; }
+    .header h1 { font-size: 20px; font-weight: 700; }
+    .score-ring { width: 120px; height: 120px; border-radius: 50%; border: 8px solid #5eead4; display: flex; align-items: center; justify-content: center; margin: 24px auto; background: white; }
+    .score-ring span { font-size: 36px; font-weight: 700; color: #0f766e; }
+    .card { background: white; border-radius: 12px; padding: 16px; margin: 0 16px 12px; border: 1px solid #e2e8f0; }
+    .risk { display: inline-block; background: #fef3c7; color: #b45309; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+    .btn { display: block; width: calc(100% - 32px); margin: 16px; padding: 12px; background: #0f766e; color: white; border: none; border-radius: 8px; font-size: 14px; }
+    .nav { position: fixed; bottom: 0; width: 390px; display: flex; background: white; border-top: 1px solid #e2e8f0; padding: 8px 0 20px; }
+    .nav-item { flex: 1; text-align: center; font-size: 11px; color: #64748b; }
+    .nav-item.active { color: #0f766e; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="status"></div>
+  <div class="header"><h1>Wellness Check-in</h1></div>
+  <div class="score-ring"><span>78</span></div>
+  <p style="text-align:center;color:#64748b;font-size:14px;">Wellness Score</p>
+  <div class="card">
+    <span class="risk">Medium risk</span>
+    <p style="margin-top:10px;font-size:14px;">Overtime this week: <strong>+6 hrs</strong></p>
+    <p style="margin-top:8px;font-size:13px;color:#64748b;">Tap below to submit your daily wellness check-in.</p>
+  </div>
+  <button class="btn">Submit Daily Check-in</button>
+  <div class="nav">
+    <div class="nav-item">📅 Schedule</div>
+    <div class="nav-item active">💚 Wellness</div>
+    <div class="nav-item">🔔 Alerts</div>
+  </div>
+</body>
+</html>

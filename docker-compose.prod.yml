@@ -1,0 +1,72 @@
+# Integrated production deploy — use /opt/docker-compose/docker-compose.hwo.yml on server.
+# This file is kept for local testing only; it uses an isolated network.
+#
+# On server, HWO joins the existing app_network and shared postgres.
+# See: /Users/rum_two/Server-158.220.121.106/docker-compose.hwo.yml
+
+version: "3.8"
+
+services:
+  hwo_postgres:
+    image: postgres:16-alpine
+    container_name: hwo_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: hwo
+    ports:
+      - "5434:5432"
+    volumes:
+      - hwo_postgres_data:/var/lib/postgresql/data
+
+  hwo_ai:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    container_name: hwo_ai
+    restart: unless-stopped
+    ports:
+      - "8002:8000"
+
+  hwo_backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hwo_backend
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8080
+      DB_HOST: hwo_postgres
+      DB_PORT: 5432
+      DB_NAME: hwo
+      DB_USER: postgres
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      JWT_SECRET: ${JWT_SECRET:-your-256-bit-secret-change-in-production-must-be-at-least-32-chars}
+      AI_SERVICE_URL: http://hwo_ai:8000
+    ports:
+      - "8084:8080"
+    depends_on:
+      - hwo_postgres
+      - hwo_ai
+
+  hwo_frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        BACKEND_API_URL: http://hwo_backend:8080
+    container_name: hwo_frontend
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      BACKEND_API_URL: http://hwo_backend:8080
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3004}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-health-workforce-optimizer-secret-change-in-production}
+    ports:
+      - "3004:3000"
+    depends_on:
+      - hwo_backend
+
+volumes:
+  hwo_postgres_data:

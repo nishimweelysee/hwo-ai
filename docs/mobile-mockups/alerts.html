@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=390, initial-scale=1" />
+  <title>HWO Mobile — Alerts</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; width: 390px; min-height: 844px; background: #f8fafc; color: #1e293b; }
+    .status { height: 44px; background: #0f766e; }
+    .header { background: #0f766e; color: white; padding: 16px 20px 24px; }
+    .header h1 { font-size: 20px; font-weight: 700; }
+    .alert { background: white; border-radius: 12px; padding: 14px; margin: 12px 16px; border-left: 4px solid #f43f5e; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+    .alert.warn { border-left-color: #f59e0b; }
+    .alert h3 { font-size: 14px; font-weight: 600; }
+    .alert p { font-size: 12px; color: #64748b; margin-top: 4px; }
+    .alert time { font-size: 11px; color: #94a3b8; margin-top: 8px; display: block; }
+    .nav { position: fixed; bottom: 0; width: 390px; display: flex; background: white; border-top: 1px solid #e2e8f0; padding: 8px 0 20px; }
+    .nav-item { flex: 1; text-align: center; font-size: 11px; color: #64748b; }
+    .nav-item.active { color: #0f766e; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="status"></div>
+  <div class="header"><h1>Alerts</h1><p style="font-size:13px;opacity:0.85;margin-top:4px;">Real-time workforce notifications</p></div>
+  <div class="alert">
+    <h3>Schedule change — ICU Day shift</h3>
+    <p>Your shift tomorrow has been updated to 08:00 start.</p>
+    <time>2 hours ago</time>
+  </div>
+  <div class="alert warn">
+    <h3>Wellness reminder</h3>
+    <p>Complete your daily wellness check-in.</p>
+    <time>Today 09:00</time>
+  </div>
+  <div class="alert">
+    <h3>High workload alert — Emergency</h3>
+    <p>Forecasted surge — additional staff may be requested.</p>
+    <time>Yesterday</time>
+  </div>
+  <div class="nav">
+    <div class="nav-item">📅 Schedule</div>
+    <div class="nav-item">💚 Wellness</div>
+    <div class="nav-item active">🔔 Alerts</div>
+  </div>
+</body>
+</html>
