@@ -374,6 +374,22 @@ def predict_from_artifact(
     residual_std: float,
 ) -> dict[str, Any]:
     artifact = deserialize_artifact(artifact_b64)
+    return predict_from_artifact_obj(artifact, values, dates, target, granularity, residual_std)
+
+
+def predict_from_artifact_obj(
+    artifact: dict[str, Any],
+    values: np.ndarray,
+    dates: list[datetime],
+    target: datetime,
+    granularity: str,
+    residual_std: float,
+) -> dict[str, Any]:
+    """Predict a single point from an already-deserialized artifact.
+
+    Splitting deserialization out of inference lets callers decode the (large)
+    joblib artifact once and reuse it for many target dates in a batch.
+    """
     x = build_target_features(values, dates, target, granularity)
     ridge = artifact["ridge"]
     scaler = artifact["scaler"]

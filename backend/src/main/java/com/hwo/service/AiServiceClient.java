@@ -18,14 +18,19 @@ public class AiServiceClient {
 
     private static final long HEALTH_CACHE_MS = 10_000;
 
+    /** Long read timeout — used only for model training, which can take minutes. */
     private final RestTemplate restTemplate;
+    /** Short read timeout — used for interactive calls so slow AI fails fast. */
+    private final RestTemplate interactiveRestTemplate;
     private final AiServiceProperties properties;
     private volatile boolean cachedHealthy;
     private volatile long cachedHealthyAtMs;
 
     public AiServiceClient(@Qualifier("aiRestTemplate") RestTemplate restTemplate,
+                           @Qualifier("aiInteractiveRestTemplate") RestTemplate interactiveRestTemplate,
                            AiServiceProperties properties) {
         this.restTemplate = restTemplate;
+        this.interactiveRestTemplate = interactiveRestTemplate;
         this.properties = properties;
     }
 
@@ -37,7 +42,7 @@ public class AiServiceClient {
         cachedHealthyAtMs = now;
         try {
             @SuppressWarnings("unchecked")
-            Map<String, Object> response = restTemplate.getForObject(
+            Map<String, Object> response = interactiveRestTemplate.getForObject(
                 properties.getUrl() + "/health", Map.class);
             cachedHealthy = response != null && "ok".equals(response.get("status"));
         } catch (RestClientException e) {
@@ -76,7 +81,7 @@ public class AiServiceClient {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
-        Map<String, Object> response = restTemplate.postForObject(
+        Map<String, Object> response = interactiveRestTemplate.postForObject(
             properties.getUrl() + "/forecast", request, Map.class);
         if (response == null || !(response.get("forecast") instanceof List<?> forecast)) {
             throw new IllegalStateException("AI service returned empty forecast response");
@@ -89,7 +94,7 @@ public class AiServiceClient {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
-        Map<String, Object> response = restTemplate.postForObject(
+        Map<String, Object> response = interactiveRestTemplate.postForObject(
             properties.getUrl() + "/forecast-series", request, Map.class);
         if (response == null) {
             throw new IllegalStateException("AI service returned empty series forecast response");
@@ -102,7 +107,7 @@ public class AiServiceClient {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
-        Map<String, Object> response = restTemplate.postForObject(
+        Map<String, Object> response = interactiveRestTemplate.postForObject(
             properties.getUrl() + "/predict-point", request, Map.class);
         if (response == null) {
             throw new IllegalStateException("AI service returned empty predict-point response");
@@ -110,12 +115,29 @@ public class AiServiceClient {
         return response;
     }
 
+    /**
+     * Batch variant of {@link #predictPoint(Map)} — one round-trip for many target
+     * dates. Returns the ordered list under the {@code "points"} key.
+     */
+    @SuppressWarnings("unchecked")
+    public List<Map<String, Object>> predictPoints(Map<String, Object> requestBody) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
+        Map<String, Object> response = interactiveRestTemplate.postForObject(
+            properties.getUrl() + "/predict-points", request, Map.class);
+        if (response == null || !(response.get("points") instanceof List<?> points)) {
+            throw new IllegalStateException("AI service returned empty predict-points response");
+        }
+        return (List<Map<String, Object>>) points;
+    }
+
     @SuppressWarnings("unchecked")
     public Map<String, Object> rankAssignees(Map<String, Object> requestBody) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
-        Map<String, Object> response = restTemplate.postForObject(
+        Map<String, Object> response = interactiveRestTemplate.postForObject(
             properties.getUrl() + "/rank-assignees", request, Map.class);
         if (response == null || !(response.get("rankings") instanceof List<?>)) {
             throw new IllegalStateException("AI service returned empty ranking response");
@@ -175,7 +197,7 @@ public class AiServiceClient {
 
     @SuppressWarnings("unchecked")
     public Map<String, Object> getWellnessModelInfo() {
-        Map<String, Object> response = restTemplate.getForObject(
+        Map<String, Object> response = interactiveRestTemplate.getForObject(
             properties.getUrl() + "/wellness/model-info", Map.class);
         if (response == null) {
             throw new IllegalStateException("AI service returned empty wellness model info");
@@ -188,7 +210,7 @@ public class AiServiceClient {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<Map<String, Object>> request = new HttpEntity<>(requestBody, headers);
-        Map<String, Object> response = restTemplate.postForObject(
+        Map<String, Object> response = interactiveRestTemplate.postForObject(
             properties.getUrl() + path, request, Map.class);
         if (response == null) {
             throw new IllegalStateException("AI service returned empty response for " + path);

@@ -408,6 +408,19 @@ public class PredictionService {
         return result;
     }
 
+    /**
+     * Batch variant of {@link #buildPredictPointRequest}: all model context is shared,
+     * only the target dates differ, so the whole series is one round-trip to the AI service.
+     */
+    private Map<String, Object> buildPredictPointsRequest(Map<String, Object> config, List<LocalDate> targetDates,
+                                                          List<Map<String, Object>> trainingSeries) {
+        Map<String, Object> request = buildPredictPointRequest(config, targetDates.isEmpty()
+            ? LocalDate.now() : targetDates.get(0), trainingSeries);
+        request.remove("target_date");
+        request.put("target_dates", targetDates.stream().map(LocalDate::toString).collect(Collectors.toList()));
+        return request;
+    }
+
     private Map<String, Object> buildPredictPointRequest(Map<String, Object> config, LocalDate targetDate,
                                                          List<Map<String, Object>> trainingSeries) {
         Map<String, Object> request = new LinkedHashMap<>();
@@ -611,22 +624,38 @@ public class PredictionService {
     private List<Map<String, Object>> buildArtifactWorkloadTrend(List<MonthlyPoint> monthlyData,
                                                                   Map<String, Object> config) {
         List<Map<String, Object>> trainingSeries = buildUnifiedDailyTrainingSeries();
-        List<Map<String, Object>> trend = new ArrayList<>();
         int maxAiPoints = 18;
         int startIdx = Math.max(0, monthlyData.size() - maxAiPoints);
+
+        List<MonthlyPoint> points = new ArrayList<>();
+        List<LocalDate> targets = new ArrayList<>();
         for (int i = startIdx; i < monthlyData.size(); i++) {
             MonthlyPoint point = monthlyData.get(i);
-            LocalDate monthEnd = point.date().withDayOfMonth(point.date().lengthOfMonth());
+            points.add(point);
+            targets.add(point.date().withDayOfMonth(point.date().lengthOfMonth()));
+        }
+
+        // One batch round-trip instead of one HTTP call per month.
+        List<Map<String, Object>> aiPoints = null;
+        try {
+            aiPoints = aiServiceClient.predictPoints(buildPredictPointsRequest(config, targets, trainingSeries));
+        } catch (Exception ignored) {
+            // fall back to local coefficient model below
+        }
+
+        List<Map<String, Object>> trend = new ArrayList<>();
+        for (int j = 0; j < points.size(); j++) {
+            MonthlyPoint point = points.get(j);
             Map<String, Object> row = new LinkedHashMap<>();
             row.put("month", MONTH_NAMES[point.monthIndex()]);
             row.put("actual", Math.round(point.value()));
-            try {
-                Map<String, Object> request = buildPredictPointRequest(config, monthEnd, trainingSeries);
-                Map<String, Object> aiResult = aiServiceClient.predictPoint(request);
-                row.put("predicted", Math.round(asDouble(aiResult.get("predicted"))));
-            } catch (Exception ignored) {
-                row.put("predicted", Math.round(predictValue(i, config)));
+            Double predicted = null;
+            if (aiPoints != null && j < aiPoints.size()) {
+                predicted = asDouble(aiPoints.get(j).get("predicted"));
             }
+            row.put("predicted", Math.round(predicted != null
+                ? predicted
+                : predictValue(startIdx + j, config)));
             trend.add(row);
         }
         return trend;
@@ -713,25 +742,34 @@ public class PredictionService {
         Map<String, List<Double>> lowsByMonth = new LinkedHashMap<>();
         Map<String, List<Double>> highsByMonth = new LinkedHashMap<>();
 
+        List<LocalDate> targets = new ArrayList<>();
         for (int monthOffset = 1; monthOffset <= horizonMonths; monthOffset++) {
             LocalDate target = lastDate.plusMonths(monthOffset);
             if (target.getDayOfMonth() != lastDate.getDayOfMonth()) {
                 int day = Math.min(lastDate.getDayOfMonth(), target.lengthOfMonth());
                 target = target.withDayOfMonth(day);
             }
-            try {
-                Map<String, Object> request = buildPredictPointRequest(config, target, trainingSeries);
-                Map<String, Object> aiResult = aiServiceClient.predictPoint(request);
-                String month = MONTH_NAMES[target.getMonthValue() - 1];
-                predsByMonth.computeIfAbsent(month, ignored -> new ArrayList<>())
-                    .add(asDouble(aiResult.get("predicted")));
-                lowsByMonth.computeIfAbsent(month, ignored -> new ArrayList<>())
-                    .add(asDouble(aiResult.get("low")));
-                highsByMonth.computeIfAbsent(month, ignored -> new ArrayList<>())
-                    .add(asDouble(aiResult.get("high")));
-            } catch (Exception ignored) {
-                // skip month
-            }
+            targets.add(target);
+        }
+
+        // Single batch round-trip for the whole horizon.
+        List<Map<String, Object>> aiPoints;
+        try {
+            aiPoints = aiServiceClient.predictPoints(buildPredictPointsRequest(config, targets, trainingSeries));
+        } catch (Exception e) {
+            return List.of();
+        }
+
+        for (int i = 0; i < targets.size() && i < aiPoints.size(); i++) {
+            LocalDate target = targets.get(i);
+            Map<String, Object> aiResult = aiPoints.get(i);
+            String month = MONTH_NAMES[target.getMonthValue() - 1];
+            predsByMonth.computeIfAbsent(month, ignored -> new ArrayList<>())
+                .add(asDouble(aiResult.get("predicted")));
+            lowsByMonth.computeIfAbsent(month, ignored -> new ArrayList<>())
+                .add(asDouble(aiResult.get("low")));
+            highsByMonth.computeIfAbsent(month, ignored -> new ArrayList<>())
+                .add(asDouble(aiResult.get("high")));
         }
 
         List<Map<String, Object>> forecast = new ArrayList<>();

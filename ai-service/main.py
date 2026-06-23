@@ -9,7 +9,12 @@ import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from ml_engine import predict_from_artifact, train_workload_model
+from ml_engine import (
+    deserialize_artifact,
+    predict_from_artifact,
+    predict_from_artifact_obj,
+    train_workload_model,
+)
 from wellness_engine import (
     analyze_feedback_sentiment,
     get_burnout_model_info,
@@ -71,6 +76,30 @@ class PredictPointResponse(BaseModel):
     high: float
     trend: str
     source: str
+
+
+class PredictPointsRequest(BaseModel):
+    """Batch variant of PredictPointRequest.
+
+    All model context (artifact/coefficients/training data) is shared; only the
+    target dates differ. This lets the backend build a whole trend/forecast
+    series in a single round-trip instead of one HTTP call per point.
+    """
+    target_dates: list[str] = Field(default_factory=list)
+    granularity: str = "monthly"
+    coefficients: list[float] = Field(default_factory=list)
+    scale_params: Optional[dict] = None
+    residual_std: float = 3.0
+    last_index: int = 0
+    last_date: Optional[str] = None
+    model_artifact: Optional[str] = None
+    model_type: Optional[str] = None
+    training_values: Optional[list[float]] = None
+    training_dates: Optional[list[str]] = None
+
+
+class PredictPointsResponse(BaseModel):
+    points: list[PredictPointResponse]
 
 
 class FeatureImportance(BaseModel):
@@ -426,6 +455,53 @@ def train(req: TrainRequest):
         raise HTTPException(500, str(e))
 
 
+def _predict_point_from_coefficients(
+    target: datetime,
+    granularity: str,
+    coefficients: list[float],
+    scale_params: Optional[dict],
+    residual_std: float,
+    last_index: int,
+    last_date: Optional[str],
+) -> dict:
+    if len(coefficients) != 4:
+        raise HTTPException(400, "Expected 4 coefficients or model_artifact")
+    coefs = np.array(coefficients)
+    if granularity == "daily":
+        if not last_date:
+            raise HTTPException(400, "last_date required for daily models")
+        last = datetime.fromisoformat(last_date[:10]).date()
+        days_ahead = max(0, (target.date() - last).days)
+        pred_idx = last_index + days_ahead
+        target_dow = target.weekday()
+        x = np.array([1, pred_idx, np.sin(2 * np.pi * target_dow / 7), np.cos(2 * np.pi * target_dow / 7)])
+        source = "ridge-daily"
+    else:
+        month_idx = target.month - 1
+        pred_idx = last_index + 1
+        x = np.array([1, pred_idx, np.sin(2 * np.pi * month_idx / 12), np.cos(2 * np.pi * month_idx / 12)])
+        source = "ridge-monthly"
+
+    if scale_params:
+        mean = np.array(scale_params.get("mean", [0] * 4))
+        std = np.array(scale_params.get("std", [1] * 4))
+        x = (x - mean) / np.maximum(std, 1e-8)
+        x[0] = 1
+    pred = float(np.dot(x, coefs))
+    pred = max(0, min(100, pred))
+    days_ahead = 0
+    if granularity == "daily" and last_date:
+        days_ahead = max(0, (target.date() - datetime.fromisoformat(last_date[:10]).date()).days)
+    margin = 1.96 * residual_std * np.sqrt(1 + days_ahead * 0.08)
+    return {
+        "predicted": round(pred, 1),
+        "low": round(max(0, pred - margin), 1),
+        "high": round(min(100, pred + margin), 1),
+        "trend": "stable",
+        "source": source,
+    }
+
+
 @app.post("/predict-point", response_model=PredictPointResponse)
 def predict_point(req: PredictPointRequest):
     try:
@@ -438,42 +514,48 @@ def predict_point(req: PredictPointRequest):
             )
             return PredictPointResponse(**out)
 
-        if len(req.coefficients) != 4:
-            raise HTTPException(400, "Expected 4 coefficients or model_artifact")
-        coefs = np.array(req.coefficients)
-        if req.granularity == "daily":
-            if not req.last_date:
-                raise HTTPException(400, "last_date required for daily models")
-            last_date = datetime.fromisoformat(req.last_date[:10]).date()
-            days_ahead = max(0, (target.date() - last_date).days)
-            pred_idx = req.last_index + days_ahead
-            target_dow = target.weekday()
-            x = np.array([1, pred_idx, np.sin(2 * np.pi * target_dow / 7), np.cos(2 * np.pi * target_dow / 7)])
-            source = "ridge-daily"
-        else:
-            month_idx = target.month - 1
-            pred_idx = req.last_index + 1
-            x = np.array([1, pred_idx, np.sin(2 * np.pi * month_idx / 12), np.cos(2 * np.pi * month_idx / 12)])
-            source = "ridge-monthly"
-
-        if req.scale_params:
-            mean = np.array(req.scale_params.get("mean", [0] * 4))
-            std = np.array(req.scale_params.get("std", [1] * 4))
-            x = (x - mean) / np.maximum(std, 1e-8)
-            x[0] = 1
-        pred = float(np.dot(x, coefs))
-        pred = max(0, min(100, pred))
-        days_ahead = 0
-        if req.granularity == "daily" and req.last_date:
-            days_ahead = max(0, (target.date() - datetime.fromisoformat(req.last_date[:10]).date()).days)
-        margin = 1.96 * req.residual_std * np.sqrt(1 + days_ahead * 0.08)
-        return PredictPointResponse(
-            predicted=round(pred, 1),
-            low=round(max(0, pred - margin), 1),
-            high=round(min(100, pred + margin), 1),
-            trend="stable",
-            source=source,
+        out = _predict_point_from_coefficients(
+            target, req.granularity, req.coefficients, req.scale_params,
+            req.residual_std, req.last_index, req.last_date,
         )
+        return PredictPointResponse(**out)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(500, str(e))
+
+
+@app.post("/predict-points", response_model=PredictPointsResponse)
+def predict_points(req: PredictPointsRequest):
+    """Predict many target dates in one request.
+
+    For artifact-backed models the (large) joblib artifact is deserialized once
+    and reused for every target, replacing the previous N-HTTP-calls pattern.
+    """
+    try:
+        points: list[PredictPointResponse] = []
+        use_artifact = bool(req.model_artifact and req.training_values and req.training_dates)
+        artifact = None
+        values = None
+        dates = None
+        if use_artifact:
+            values = np.array(req.training_values, dtype=float)
+            dates = [datetime.fromisoformat(d[:10]) for d in req.training_dates]
+            artifact = deserialize_artifact(req.model_artifact)
+
+        for target_date in req.target_dates:
+            target = datetime.fromisoformat(target_date[:10])
+            if use_artifact:
+                out = predict_from_artifact_obj(
+                    artifact, values, dates, target, req.granularity, req.residual_std
+                )
+            else:
+                out = _predict_point_from_coefficients(
+                    target, req.granularity, req.coefficients, req.scale_params,
+                    req.residual_std, req.last_index, req.last_date,
+                )
+            points.append(PredictPointResponse(**out))
+        return PredictPointsResponse(points=points)
     except HTTPException:
         raise
     except Exception as e:

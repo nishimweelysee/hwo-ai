@@ -31,6 +31,20 @@ public class WebConfig {
         return new RestTemplate(factory);
     }
 
+    /**
+     * Short read-timeout client for interactive AI calls (health/predict/forecast),
+     * so analytics page loads fail fast and fall back instead of blocking a request
+     * thread for the full {@code readTimeoutMs} (used only by training).
+     */
+    @Bean
+    @Qualifier("aiInteractiveRestTemplate")
+    public RestTemplate aiInteractiveRestTemplate(AiServiceProperties aiServiceProperties) {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(aiServiceProperties.getConnectTimeoutMs());
+        factory.setReadTimeout(aiServiceProperties.getInteractiveReadTimeoutMs());
+        return new RestTemplate(factory);
+    }
+
     @Bean
     public CorsFilter corsFilter() {
         CorsConfiguration config = new CorsConfiguration();
