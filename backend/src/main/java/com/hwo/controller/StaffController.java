@@ -12,6 +12,7 @@ import com.hwo.service.StaffRoleService;
 import com.hwo.service.WellnessService;
 import com.hwo.service.CurrentUserService;
 import com.hwo.web.PermissionResponses;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -49,15 +50,36 @@ public class StaffController {
     @GetMapping("/staff")
     public ResponseEntity<?> getStaff(
             @RequestParam(required = false) String departmentId,
-            @RequestParam(required = false) Boolean wellness) {
-        List<Staff> staff = departmentId != null
-            ? staffRepository.findByDepartmentId(departmentId)
-            : staffRepository.findAll();
-
+            @RequestParam(required = false) Boolean wellness,
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "500") int limit) {
         if (Boolean.TRUE.equals(wellness)) {
+            int capped = Math.min(Math.max(limit, 1), 2000);
+            String q = search != null ? search.trim() : "";
+            List<Staff> staff = staffRepository.searchOptions(
+                departmentId != null && !departmentId.isBlank() ? departmentId : null,
+                q.isEmpty() ? null : q,
+                PageRequest.of(0, capped));
+            Map<String, String> departmentNames = departmentRepository.findAllOrderByName().stream()
+                .collect(Collectors.toMap(Department::getId, Department::getName, (a, b) -> a));
+            Map<String, WellnessRecord> latestByStaff = wellnessRecordRepository.findLatestPerStaff().stream()
+                .collect(Collectors.toMap(WellnessRecord::getStaffId, r -> r, (a, b) -> a));
+            Set<String> staffIds = staff.stream().map(Staff::getId).collect(Collectors.toSet());
+            Map<String, User> userByStaffId = staffIds.isEmpty()
+                ? Map.of()
+                : userRepository.findByStaffIdIn(staffIds).stream()
+                    .filter(u -> u.getStaffId() != null)
+                    .collect(Collectors.toMap(User::getStaffId, u -> u, (a, b) -> a));
             return ResponseEntity.ok(staff.stream()
-                .map(this::toWellnessStaffDto)
+                .map(s -> toWellnessStaffDto(s, departmentNames, latestByStaff, userByStaffId))
                 .collect(Collectors.toList()));
+        }
+        List<Staff> staff;
+        if (departmentId != null) {
+            staff = staffRepository.findByDepartmentId(departmentId);
+        } else {
+            int capped = Math.min(Math.max(limit, 1), 2000);
+            staff = staffRepository.searchOptions(null, null, PageRequest.of(0, capped));
         }
         Map<String, String> departmentNames = departmentRepository.findAllOrderByName().stream()
             .collect(Collectors.toMap(Department::getId, Department::getName, (a, b) -> a));
@@ -153,18 +175,21 @@ public class StaffController {
         return row;
     }
 
-    private Map<String, Object> toWellnessStaffDto(Staff staff) {
+    private Map<String, Object> toWellnessStaffDto(Staff staff,
+                                                   Map<String, String> departmentNames,
+                                                   Map<String, WellnessRecord> latestByStaff,
+                                                   Map<String, User> userByStaffId) {
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("id", staff.getId());
         row.put("name", staff.getName());
         row.put("role", staff.getRole());
-        Department dept = staff.getDepartmentId() != null
-            ? departmentRepository.findById(staff.getDepartmentId()).orElse(null) : null;
-        row.put("department", dept != null ? Map.of("name", dept.getName()) : Map.of("name", ""));
+        String deptName = staff.getDepartmentId() != null
+            ? departmentNames.getOrDefault(staff.getDepartmentId(), "")
+            : "";
+        row.put("department", Map.of("name", deptName));
 
-        List<WellnessRecord> records = wellnessRecordRepository.findTop1ByStaffIdOrderByDateDesc(staff.getId());
-        if (!records.isEmpty()) {
-            WellnessRecord record = records.get(0);
+        WellnessRecord record = latestByStaff.get(staff.getId());
+        if (record != null) {
             row.put("wellness", List.of(Map.of(
                 "riskLevel", record.getRiskLevel() != null ? record.getRiskLevel() : "low",
                 "overtime", record.getOvertime()
@@ -173,10 +198,11 @@ public class StaffController {
             row.put("wellness", List.of());
         }
 
-        userRepository.findByStaffId(staff.getId()).ifPresent(user -> {
+        User user = userByStaffId.get(staff.getId());
+        if (user != null) {
             row.put("userId", user.getId());
             row.put("email", user.getEmail());
-        });
+        }
         return row;
     }
 }

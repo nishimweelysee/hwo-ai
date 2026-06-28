@@ -7,7 +7,6 @@ import com.hwo.entity.PredictionModel;
 import com.hwo.entity.WorkloadRecord;
 import com.hwo.repository.DepartmentRepository;
 import com.hwo.repository.PredictionModelRepository;
-import com.hwo.repository.WorkloadRecordRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -27,7 +26,7 @@ public class PredictionService {
 
     private final AiServiceClient aiServiceClient;
     private final PredictionModelRepository predictionModelRepository;
-    private final WorkloadRecordRepository workloadRecordRepository;
+    private final WorkloadQueryService workloadQueryService;
     private final DepartmentRepository departmentRepository;
     private final SettingsService settingsService;
     private final ObjectMapper objectMapper;
@@ -47,13 +46,13 @@ public class PredictionService {
 
     public PredictionService(AiServiceClient aiServiceClient,
                              PredictionModelRepository predictionModelRepository,
-                             WorkloadRecordRepository workloadRecordRepository,
+                             WorkloadQueryService workloadQueryService,
                              DepartmentRepository departmentRepository,
                              SettingsService settingsService,
                              ObjectMapper objectMapper) {
         this.aiServiceClient = aiServiceClient;
         this.predictionModelRepository = predictionModelRepository;
-        this.workloadRecordRepository = workloadRecordRepository;
+        this.workloadQueryService = workloadQueryService;
         this.departmentRepository = departmentRepository;
         this.settingsService = settingsService;
         this.objectMapper = objectMapper;
@@ -305,7 +304,7 @@ public class PredictionService {
 
     private List<Map<String, Object>> buildUnifiedDailyTrainingSeries() {
         Map<LocalDate, List<Double>> byDate = new TreeMap<>();
-        for (WorkloadRecord record : workloadRecordRepository.findAllWithDepartment()) {
+        for (WorkloadRecord record : workloadQueryService.findAllOrdered()) {
             if (record.getDate() == null) {
                 continue;
             }
@@ -507,7 +506,7 @@ public class PredictionService {
 
     private List<Map<String, Object>> buildDepartmentTrainingSeries(String departmentId) {
         Map<LocalDate, List<Double>> byDate = new TreeMap<>();
-        for (WorkloadRecord record : workloadRecordRepository.findAllWithDepartment()) {
+        for (WorkloadRecord record : workloadQueryService.findAllOrdered()) {
             if (!departmentId.equals(record.getDepartmentId()) || record.getDate() == null) {
                 continue;
             }
@@ -525,7 +524,7 @@ public class PredictionService {
         }
 
         Map<String, List<Double>> byMonth = new LinkedHashMap<>();
-        for (WorkloadRecord record : workloadRecordRepository.findAllWithDepartment()) {
+        for (WorkloadRecord record : workloadQueryService.findAllOrdered()) {
             if (!departmentId.equals(record.getDepartmentId()) || record.getDate() == null) {
                 continue;
             }
@@ -544,7 +543,7 @@ public class PredictionService {
     }
 
     private double fallbackDepartmentLoad(String departmentId, LocalDate targetDate) {
-        List<WorkloadRecord> records = workloadRecordRepository.findAllWithDepartment().stream()
+        List<WorkloadRecord> records = workloadQueryService.findAllOrdered().stream()
             .filter(r -> departmentId.equals(r.getDepartmentId()))
             .filter(r -> r.getDate() != null)
             .collect(Collectors.toList());
@@ -566,7 +565,7 @@ public class PredictionService {
     }
 
     private double averageWorkloadBetween(String departmentId, LocalDate start, LocalDate end) {
-        return workloadRecordRepository.findAllWithDepartment().stream()
+        return workloadQueryService.findAllOrdered().stream()
             .filter(r -> departmentId.equals(r.getDepartmentId()))
             .filter(r -> r.getDate() != null)
             .filter(r -> {
@@ -597,7 +596,7 @@ public class PredictionService {
     }
 
     private List<MonthlyPoint> aggregateMonthlyWorkload() {
-        List<WorkloadRecord> records = workloadRecordRepository.findAllByOrderByDateAsc();
+        List<WorkloadRecord> records = workloadQueryService.findAllOrdered();
         Map<String, List<Double>> byMonth = new LinkedHashMap<>();
 
         for (WorkloadRecord record : records) {

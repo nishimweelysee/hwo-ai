@@ -227,11 +227,12 @@ public class SchedulingAiService {
 
     /** Fast staffing multipliers for batch auto-schedule (skips AI predict-point calls). */
     public Map<String, Double> forecastMultipliersHeuristic(LocalDate date) {
+        Map<String, Double> trends = departmentTrends(date);
         Map<String, Double> multipliers = new LinkedHashMap<>();
         for (Department department : departmentRepository.findAll()) {
             if (!department.isActive()) continue;
             double loadFactor = department.getWorkload() / 100.0;
-            double trend = departmentTrend(department.getId(), date);
+            double trend = trends.getOrDefault(department.getId(), 0.0);
             double score = loadFactor + trend;
             double multiplier = score >= 0.95 ? 1.75 : score >= 0.8 ? 1.5 : score >= 0.65 ? 1.25 : 1.0;
             multipliers.put(department.getId(), multiplier);
@@ -467,13 +468,14 @@ public class SchedulingAiService {
         Map<String, List<Staff>> staffByDepartment = staffRepository.findAll().stream()
             .filter(s -> s.getDepartmentId() != null)
             .collect(Collectors.groupingBy(Staff::getDepartmentId));
+        Map<String, Double> trends = departmentTrends(date);
 
         List<Map<String, Object>> forecasts = new ArrayList<>();
         for (Department department : departments) {
             double multiplier = multipliers.getOrDefault(department.getId(), 1.0);
             int effectiveMin = (int) Math.ceil(baseMin * multiplier);
             double predictedLoad = department.getWorkload();
-            double trendValue = departmentTrend(department.getId(), date);
+            double trendValue = trends.getOrDefault(department.getId(), 0.0);
             String trend = trendValue > 0.05 ? "rising" : trendValue < -0.05 ? "falling" : "stable";
             List<String> requiredCerts = requiredCertsFor(department.getName(), "Day");
             int certCoverage = certCoveragePercent(
@@ -588,18 +590,43 @@ public class SchedulingAiService {
         return n.contains("icu") || n.contains("emergency") || n.contains("critical");
     }
 
+    /**
+     * Trends for every department computed from a single windowed query, instead of
+     * re-scanning the full workload table once per department (the old per-department
+     * path turned a schedule summary into dozens of full-table scans).
+     */
+    private Map<String, Double> departmentTrends(LocalDate date) {
+        LocalDate priorStart = date.minusDays(14);
+        List<WorkloadRecord> windowRecords = workloadRecordRepository.findByDateRange(
+            priorStart.atStartOfDay(), date.plusDays(1).atStartOfDay());
+        Map<String, List<WorkloadRecord>> byDepartment = windowRecords.stream()
+            .filter(r -> r.getDepartmentId() != null && r.getDate() != null)
+            .collect(Collectors.groupingBy(WorkloadRecord::getDepartmentId));
+        Map<String, Double> trends = new HashMap<>();
+        byDepartment.forEach((deptId, records) -> trends.put(deptId, computeTrend(records, date)));
+        return trends;
+    }
+
     private double departmentTrend(String departmentId, LocalDate date) {
+        LocalDate priorStart = date.minusDays(14);
+        List<WorkloadRecord> records = workloadRecordRepository.findByDateRange(
+                priorStart.atStartOfDay(), date.plusDays(1).atStartOfDay()).stream()
+            .filter(r -> departmentId.equals(r.getDepartmentId()))
+            .collect(Collectors.toList());
+        return computeTrend(records, date);
+    }
+
+    private double computeTrend(List<WorkloadRecord> departmentRecords, LocalDate date) {
         LocalDate recentStart = date.minusDays(7);
         LocalDate priorStart = date.minusDays(14);
-        double recentAvg = averageWorkload(departmentId, recentStart, date);
-        double priorAvg = averageWorkload(departmentId, priorStart, recentStart.minusDays(1));
+        double recentAvg = averageWorkload(departmentRecords, recentStart, date);
+        double priorAvg = averageWorkload(departmentRecords, priorStart, recentStart.minusDays(1));
         if (priorAvg <= 0) return 0;
         return (recentAvg - priorAvg) / priorAvg;
     }
 
-    private double averageWorkload(String departmentId, LocalDate start, LocalDate end) {
-        List<WorkloadRecord> records = workloadRecordRepository.findAllWithDepartment().stream()
-            .filter(r -> departmentId.equals(r.getDepartmentId()))
+    private double averageWorkload(List<WorkloadRecord> departmentRecords, LocalDate start, LocalDate end) {
+        List<WorkloadRecord> records = departmentRecords.stream()
             .filter(r -> r.getDate() != null)
             .filter(r -> {
                 LocalDate d = r.getDate().toLocalDate();

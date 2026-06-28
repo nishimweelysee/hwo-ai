@@ -22,6 +22,7 @@
 /Users/rum_two/Documents/health-workforce-optimizer/health-workforce-optimizer/backend/src/main/java/com/hwo/controller/PermissionController.java
 /Users/rum_two/Documents/health-workforce-optimizer/health-workforce-optimizer/backend/src/main/java/com/hwo/service/SkillsAiService.java
 /Users/rum_two/Documents/health-workforce-optimizer/health-workforce-optimizer/backend/src/main/java/com/hwo/config/CacheConfig.java
+/Users/rum_two/Documents/health-workforce-optimizer/health-workforce-optimizer/backend/src/main/java/com/hwo/service/WorkloadQueryService.java
 /Users/rum_two/Documents/health-workforce-optimizer/health-workforce-optimizer/backend/src/main/java/com/hwo/repository/TrainingProgramRepository.java
 /Users/rum_two/Documents/health-workforce-optimizer/health-workforce-optimizer/backend/src/main/java/com/hwo/service/WellnessService.java
 /Users/rum_two/Documents/health-workforce-optimizer/health-workforce-optimizer/backend/src/main/java/com/hwo/entity/WellnessRecord.java

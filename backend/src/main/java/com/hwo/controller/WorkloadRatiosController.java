@@ -3,8 +3,8 @@ package com.hwo.controller;
 import com.hwo.entity.Department;
 import com.hwo.entity.WorkloadRecord;
 import com.hwo.repository.DepartmentRepository;
-import com.hwo.repository.WorkloadRecordRepository;
 import com.hwo.service.SettingsService;
+import com.hwo.service.WorkloadQueryService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -18,21 +18,21 @@ import java.util.stream.Collectors;
 public class WorkloadRatiosController {
 
     private final DepartmentRepository departmentRepository;
-    private final WorkloadRecordRepository workloadRecordRepository;
+    private final WorkloadQueryService workloadQueryService;
     private final SettingsService settingsService;
 
     public WorkloadRatiosController(DepartmentRepository departmentRepository,
-                                    WorkloadRecordRepository workloadRecordRepository,
+                                    WorkloadQueryService workloadQueryService,
                                     SettingsService settingsService) {
         this.departmentRepository = departmentRepository;
-        this.workloadRecordRepository = workloadRecordRepository;
+        this.workloadQueryService = workloadQueryService;
         this.settingsService = settingsService;
     }
 
     @GetMapping("/ratios")
     public ResponseEntity<Map<String, Object>> getRatios() {
         List<Department> departments = departmentRepository.findAll();
-        List<WorkloadRecord> records = workloadRecordRepository.findAll();
+        List<WorkloadRecord> records = workloadQueryService.findAllOrdered();
         double ratioTarget = settingsService.getDouble("workload", "nursePatientRatioTarget");
         String targetLabel = "1:" + String.format("%.1f", ratioTarget);
         Map<String, List<WorkloadRecord>> byDept = records.stream().collect(Collectors.groupingBy(WorkloadRecord::getDepartmentId));

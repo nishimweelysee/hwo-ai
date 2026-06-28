@@ -889,7 +889,7 @@ function RecordsAdminPanel({
   const [recordSearch, setRecordSearch] = useState("");
 
   useEffect(() => {
-    apiFetch("/api/staff")
+    apiFetch("/api/staff?limit=500")
       .then((r) => (r.ok ? r.json() : []))
       .then((rows: StaffLike[]) => setStaffList(Array.isArray(rows) ? rows : []));
   }, []);

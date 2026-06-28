@@ -1,7 +1,6 @@
 package com.hwo.service;
 
 import com.hwo.entity.WorkloadRecord;
-import com.hwo.repository.WorkloadRecordRepository;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDate;
@@ -16,14 +15,14 @@ public class WorkloadChartService {
     };
     private static final List<String> HOURS = List.of("00", "04", "08", "12", "16", "20");
 
-    private final WorkloadRecordRepository workloadRecordRepository;
+    private final WorkloadQueryService workloadQueryService;
 
-    public WorkloadChartService(WorkloadRecordRepository workloadRecordRepository) {
-        this.workloadRecordRepository = workloadRecordRepository;
+    public WorkloadChartService(WorkloadQueryService workloadQueryService) {
+        this.workloadQueryService = workloadQueryService;
     }
 
     public Map<String, Object> buildCharts() {
-        List<WorkloadRecord> records = workloadRecordRepository.findAllByOrderByDateAsc();
+        List<WorkloadRecord> records = workloadQueryService.findAllOrdered();
         Map<String, Object> charts = new LinkedHashMap<>();
         charts.put("byHour", buildByHour(records));
         charts.put("trend", buildTrend(records));

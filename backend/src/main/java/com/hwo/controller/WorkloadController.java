@@ -1,8 +1,8 @@
 package com.hwo.controller;
 
 import com.hwo.entity.WorkloadRecord;
-import com.hwo.repository.WorkloadRecordRepository;
 import com.hwo.service.WorkloadChartService;
+import com.hwo.service.WorkloadQueryService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -16,13 +16,12 @@ import java.util.Map;
 @RequestMapping("/api")
 public class WorkloadController {
 
-    private final WorkloadRecordRepository workloadRecordRepository;
-
+    private final WorkloadQueryService workloadQueryService;
     private final WorkloadChartService workloadChartService;
 
-    public WorkloadController(WorkloadRecordRepository workloadRecordRepository,
+    public WorkloadController(WorkloadQueryService workloadQueryService,
                               WorkloadChartService workloadChartService) {
-        this.workloadRecordRepository = workloadRecordRepository;
+        this.workloadQueryService = workloadQueryService;
         this.workloadChartService = workloadChartService;
     }
 
@@ -32,7 +31,7 @@ public class WorkloadController {
             return ResponseEntity.ok(workloadChartService.buildCharts());
         }
 
-        List<WorkloadRecord> records = workloadRecordRepository.findAllByOrderByDateAsc();
+        List<WorkloadRecord> records = workloadQueryService.findAllOrdered();
 
         if ("byHour".equals(type)) {
             return ResponseEntity.ok(workloadChartService.buildByHour(records));

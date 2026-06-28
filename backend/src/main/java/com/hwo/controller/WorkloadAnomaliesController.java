@@ -1,7 +1,7 @@
 package com.hwo.controller;
 
 import com.hwo.entity.WorkloadRecord;
-import com.hwo.repository.WorkloadRecordRepository;
+import com.hwo.service.WorkloadQueryService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -14,15 +14,15 @@ import java.util.stream.Collectors;
 @RequestMapping("/api/workload")
 public class WorkloadAnomaliesController {
 
-    private final WorkloadRecordRepository workloadRecordRepository;
+    private final WorkloadQueryService workloadQueryService;
 
-    public WorkloadAnomaliesController(WorkloadRecordRepository workloadRecordRepository) {
-        this.workloadRecordRepository = workloadRecordRepository;
+    public WorkloadAnomaliesController(WorkloadQueryService workloadQueryService) {
+        this.workloadQueryService = workloadQueryService;
     }
 
     @GetMapping("/anomalies")
     public ResponseEntity<Map<String, Object>> getAnomalies() {
-        List<WorkloadRecord> records = workloadRecordRepository.findAllWithDepartment();
+        List<WorkloadRecord> records = workloadQueryService.findAllWithDepartment();
         if (records.size() < 3) {
             return ResponseEntity.ok(Map.of("anomalies", List.of()));
         }

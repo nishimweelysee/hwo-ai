@@ -708,7 +708,9 @@ function StaffDrillDown() {
 
   useEffect(() => {
     setLoadingStaff(true);
-    apiFetch(`/api/staff?wellness=true${deptFilter ? `&departmentId=${deptFilter}` : ""}`)
+    const params = new URLSearchParams({ wellness: "true", limit: "500" });
+    if (deptFilter) params.set("departmentId", deptFilter);
+    apiFetch(`/api/staff?${params}`)
       .then((r) => (r.ok ? r.json() : []))
       .then(setStaff)
       .finally(() => setLoadingStaff(false));

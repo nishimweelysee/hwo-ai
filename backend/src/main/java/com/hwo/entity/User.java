@@ -17,9 +17,6 @@ public class User {
     /** Optional link to workforce Staff record — used in scheduling, workload, wellness */
     private String staffId;
 
-    @OneToOne(mappedBy = "user", fetch = FetchType.LAZY)
-    private UserProfile profile;
-
     public String getId() { return id; }
     public void setId(String id) { this.id = id; }
     public String getEmail() { return email; }

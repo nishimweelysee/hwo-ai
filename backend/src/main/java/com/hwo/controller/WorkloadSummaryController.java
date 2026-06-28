@@ -2,9 +2,9 @@ package com.hwo.controller;
 
 import com.hwo.repository.DepartmentRepository;
 import com.hwo.repository.StaffRepository;
-import com.hwo.repository.WorkloadRecordRepository;
 import com.hwo.repository.WellnessRecordRepository;
 import com.hwo.service.SettingsService;
+import com.hwo.service.WorkloadQueryService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,18 +19,18 @@ public class WorkloadSummaryController {
 
     private final DepartmentRepository departmentRepository;
     private final StaffRepository staffRepository;
-    private final WorkloadRecordRepository workloadRecordRepository;
+    private final WorkloadQueryService workloadQueryService;
     private final WellnessRecordRepository wellnessRecordRepository;
     private final SettingsService settingsService;
 
     public WorkloadSummaryController(DepartmentRepository departmentRepository,
                                     StaffRepository staffRepository,
-                                    WorkloadRecordRepository workloadRecordRepository,
+                                    WorkloadQueryService workloadQueryService,
                                     WellnessRecordRepository wellnessRecordRepository,
                                     SettingsService settingsService) {
         this.departmentRepository = departmentRepository;
         this.staffRepository = staffRepository;
-        this.workloadRecordRepository = workloadRecordRepository;
+        this.workloadQueryService = workloadQueryService;
         this.wellnessRecordRepository = wellnessRecordRepository;
         this.settingsService = settingsService;
     }
@@ -49,7 +49,7 @@ public class WorkloadSummaryController {
         int overtimeRate = totalStaff > 0 ? (int) Math.round((overtimeCount * 100.0) / totalStaff) : 0;
         int balanceScore = (int) Math.min(100, Math.round(100 - Math.abs(avgWorkload - alertThreshold) * 0.5));
 
-        double avgPatient = workloadRecordRepository.findAllByOrderByDateAsc().stream()
+        double avgPatient = workloadQueryService.findAllOrdered().stream()
             .filter(r -> r.getPatientVolume() != null)
             .mapToInt(r -> r.getPatientVolume())
             .average().orElse(0);

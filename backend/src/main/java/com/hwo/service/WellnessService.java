@@ -302,7 +302,9 @@ public class WellnessService {
 
     public Map<String, Object> getWellnessSummary() {
         refreshWellnessFromSchedulesIfStale();
-        return buildWellnessSummary(true, true, Integer.MAX_VALUE);
+        // Skip per-alert AI enrichment on the list endpoint — each alert used to trigger
+        // multiple AI/schedule round-trips. Use GET /api/wellness/ai/risk/{staffId} on demand.
+        return buildWellnessSummary(true, false, Integer.MAX_VALUE);
     }
 
     private Map<String, Object> buildWellnessSummary(boolean includeStats, boolean enrichWithAi, int alertLimit) {
@@ -465,9 +467,7 @@ public class WellnessService {
         stats.put("surveyResponseRate", responseRate);
         stats.put("feedbackCount", wellnessFeedbackRepository.count());
         stats.put("interventionCount", wellnessInterventionRepository.count());
-        stats.put("activeInterventions", wellnessInterventionRepository.findAll().stream()
-            .filter(i -> i.getStatus() == null || "active".equalsIgnoreCase(i.getStatus()))
-            .count());
+        stats.put("activeInterventions", wellnessInterventionRepository.countActiveInterventions());
         return stats;
     }
 

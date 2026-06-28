@@ -24,10 +24,9 @@ public class AiServiceClient {
     private final AiServiceProperties properties;
     /**
      * Last-known AI health, refreshed by a background scheduler (see {@link #refreshHealth()}).
-     * Reads never hit the network, so page loads never block on AI responsiveness.
-     * Optimistic at startup until the first probe runs.
+     * Pessimistic at startup so page loads never block on AI timeouts while the first probe runs.
      */
-    private volatile boolean cachedHealthy = true;
+    private volatile boolean cachedHealthy = false;
 
     public AiServiceClient(@Qualifier("aiRestTemplate") RestTemplate restTemplate,
                            @Qualifier("aiInteractiveRestTemplate") RestTemplate interactiveRestTemplate,
