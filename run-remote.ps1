@@ -166,7 +166,12 @@ function Ensure-BackendJar {
   if ($jar) { return $jar }
   Log "Building backend jar (first prod run - can take several minutes) -> $LogDir\backend-build.log"
   $buildLog = Join-Path $LogDir "backend-build.log"
-  & $MvnBin @("-q", "-DskipTests", "package") *>$buildLog
+  Push-Location (Join-Path $Root "backend")
+  try {
+    & $MvnBin @("-q", "-DskipTests", "package") *>$buildLog
+  } finally {
+    Pop-Location
+  }
   if ($LASTEXITCODE -ne 0) {
     Fail "Backend package failed - see $buildLog"
     Show-LogTail "backend-build"
