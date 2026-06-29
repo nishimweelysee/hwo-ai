@@ -4,7 +4,7 @@ import { Platform } from "react-native";
 function resolveBaseUrl(): string {
   const direct = process.env.EXPO_PUBLIC_BACKEND_URL;
   const proxy = process.env.EXPO_PUBLIC_API_URL;
-  return direct || proxy || "http://localhost:8080";
+  return direct || proxy || "http://158.220.121.106:8084";
 }
 
 /** Android emulator maps host localhost to 10.0.2.2 */
