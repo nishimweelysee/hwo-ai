@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 
 const publicPaths = ["/", "/login", "/register", "/forgot-password", "/reset-password", "/verify-email"];
 
-export async function middleware(req: NextRequest) {
+export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
   if (publicPaths.includes(pathname)) return NextResponse.next();
 
