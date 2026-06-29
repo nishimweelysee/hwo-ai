@@ -54,7 +54,17 @@ function Test-PortOpen([int]$Port) {
   }
 }
 
-function Wait-ForHttp([string]$Url, [int]$TimeoutSeconds, [string]$Label) {
+function Show-LogTail([string]$LogName, [int]$Lines = 25) {
+  foreach ($suffix in @("err", "out")) {
+    $path = Join-Path $LogDir "$LogName.$suffix.log"
+    if ((Test-Path $path) -and ((Get-Item $path).Length -gt 0)) {
+      Write-Host "----- $LogName.$suffix.log (last $Lines lines) -----" -ForegroundColor DarkGray
+      Get-Content $path -Tail $Lines | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
+    }
+  }
+}
+
+function Wait-ForHttp([string]$Url, [int]$TimeoutSeconds, [string]$Label, [string]$LogName, $Process) {
   $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
   while ((Get-Date) -lt $deadline) {
     try {
@@ -62,10 +72,17 @@ function Wait-ForHttp([string]$Url, [int]$TimeoutSeconds, [string]$Label) {
       Ok "$Label is up"
       return $true
     } catch {
+      # If the process we started already died, stop waiting and surface its log.
+      if ($Process -and $Process.HasExited) {
+        Fail "$Label process exited early (code $($Process.ExitCode)) before becoming reachable."
+        if ($LogName) { Show-LogTail $LogName }
+        return $false
+      }
       Start-Sleep -Seconds 2
     }
   }
   Warn "$Label not responding after ${TimeoutSeconds}s (continuing anyway)"
+  if ($LogName) { Show-LogTail $LogName }
   return $false
 }
 
@@ -98,11 +115,21 @@ function Get-NgrokToken {
   return ""
 }
 
+function ConvertTo-QuotedArg([string]$Value) {
+  # Start-Process does not auto-quote -ArgumentList items that contain spaces,
+  # which breaks paths like "C:\Users\IT MODERN LTD\...". Quote them ourselves.
+  if ($Value -match '[\s"]') {
+    return '"' + ($Value -replace '"', '\"') + '"'
+  }
+  return $Value
+}
+
 function Start-LoggedProcess([string]$FilePath, [string[]]$ArgumentList, [string]$WorkingDirectory, [string]$LogName) {
   $out = Join-Path $LogDir "$LogName.out.log"
   $err = Join-Path $LogDir "$LogName.err.log"
+  $argString = (($ArgumentList | ForEach-Object { ConvertTo-QuotedArg $_ }) -join ' ')
   return Start-Process -FilePath $FilePath `
-    -ArgumentList $ArgumentList `
+    -ArgumentList $argString `
     -WorkingDirectory $WorkingDirectory `
     -RedirectStandardOutput $out `
     -RedirectStandardError $err `
@@ -171,12 +198,13 @@ try {
     else { Warn "PostgreSQL not reachable on :5432 - start it before the backend will work" }
   }
 
+  $BackendProcess = $null
   if (Test-PortOpen $BackendPort) {
     Ok "Backend already running on :$BackendPort (reusing)"
   } else {
     Log "Starting Spring Boot backend -> $LogDir\backend.*.log"
-    $p = Start-LoggedProcess $MvnBin @("-q", "spring-boot:run", "-Dspring-boot.run.profiles=dev") (Join-Path $Root "backend") "backend"
-    $StartedProcesses.Add($p); $StartedPorts.Add($BackendPort)
+    $BackendProcess = Start-LoggedProcess $MvnBin @("-q", "spring-boot:run", "-Dspring-boot.run.profiles=dev") (Join-Path $Root "backend") "backend"
+    $StartedProcesses.Add($BackendProcess); $StartedPorts.Add($BackendPort)
   }
 
   if (Test-PortOpen $AiPort) {
@@ -190,16 +218,25 @@ try {
     Warn "AI service venv missing (ai-service\.venv) - skipping; backend uses its fallback model"
   }
 
+  $WebProcess = $null
   if (Test-PortOpen $WebPort) {
     Ok "Web already running on :$WebPort (reusing)"
   } else {
     Log "Starting Next.js web -> $LogDir\web.*.log"
-    $p = Start-LoggedProcess $NpmBin @("run", "dev") $Root "web"
-    $StartedProcesses.Add($p); $StartedPorts.Add($WebPort)
+    $WebProcess = Start-LoggedProcess $NpmBin @("run", "dev") $Root "web"
+    $StartedProcesses.Add($WebProcess); $StartedPorts.Add($WebPort)
   }
 
-  Wait-ForHttp "http://127.0.0.1:$BackendPort/api/auth/registration-config" 120 "Backend" | Out-Null
-  Wait-ForHttp "http://127.0.0.1:$WebPort" 120 "Web" | Out-Null
+  # Backend gets a long timeout: the first `mvn spring-boot:run` on a fresh
+  # checkout downloads the dependency tree and compiles, which can take minutes.
+  $BackendTimeout = if ($env:BACKEND_TIMEOUT) { [int]$env:BACKEND_TIMEOUT } else { 360 }
+  $backendUp = Wait-ForHttp "http://127.0.0.1:$BackendPort/api/auth/registration-config" $BackendTimeout "Backend" "backend" $BackendProcess
+  Wait-ForHttp "http://127.0.0.1:$WebPort" 120 "Web" "web" $WebProcess | Out-Null
+
+  if (-not $backendUp) {
+    Warn "Backend is not reachable. Mobile/web API calls will fail until it is up."
+    Warn "Check $LogDir\backend.err.log (full log). Common causes: Java/Maven not installed, port $BackendPort in use, or DB not running."
+  }
 
   $WantMetro = $StartMobile -and ($MobileMode -eq "ngrok")
   $NgrokCfg = Join-Path $LogDir "ngrok.yml"
@@ -246,11 +283,25 @@ tunnels:
     $metroReady = (-not $WantMetro) -or $MetroUrl
     if ($WebUrl -and $BackendUrl -and $metroReady) { break }
     if ($WebUrl -and ((Get-Date) -gt $deadline.AddSeconds(-29))) { break }
+    # If ngrok exited before tunnels were ready, stop early and show why.
+    if ($NgrokProcess -and $NgrokProcess.HasExited) {
+      Fail "ngrok exited (code $($NgrokProcess.ExitCode)) before tunnels were ready."
+      Show-LogTail "ngrok"
+      Warn "Free plan allows up to 3 endpoints, so 3 tunnels is OK. Check the log above:"
+      Warn " - ERR_NGROK_105/4018: invalid authtoken (run: ngrok config add-authtoken <TOKEN>)"
+      Warn " - ERR_NGROK_108: another ngrok agent is already running (close it in Task Manager / dashboard.ngrok.com/agents)"
+      exit 1
+    }
     Start-Sleep -Seconds 2
   }
 
   if (-not $WebUrl) {
-    Fail "Could not read ngrok URLs from $NgrokApi - see $LogDir\ngrok.*.log"
+    Fail "Could not read ngrok URLs from $NgrokApi"
+    Show-LogTail "ngrok"
+    Warn "Free plan allows up to 3 endpoints, so 3 tunnels is OK. Check the log above:"
+    Warn " - ERR_NGROK_105/4018: invalid authtoken (run: ngrok config add-authtoken <TOKEN>)"
+    Warn " - ERR_NGROK_108: another ngrok agent is already running (close it in Task Manager / dashboard.ngrok.com/agents)"
+    Warn " - is the ngrok web inspector reachable at http://127.0.0.1:4040 ?"
     exit 1
   }
   Ok "Tunnels established"
