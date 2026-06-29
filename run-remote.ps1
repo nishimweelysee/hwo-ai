@@ -2,10 +2,13 @@
 #
 # Usage:
 #   .\run-remote.ps1
+#   .\run-remote.ps1 -Profile prod
+#   .\run-remote.ps1 -Prod              # shorthand
 #   .\run-remote.ps1 -NoMobile
 #
 # Optional env vars:
-#   $env:MOBILE_MODE="ngrok"   # ngrok (default), tunnel, or lan
+#   $env:PROFILE="dev|prod"      default: dev (or use -Profile parameter)
+#   $env:SPRING_PROFILE="dev|prod"
 #   $env:BACKEND_PORT="8080"; $env:WEB_PORT="3000"; $env:METRO_PORT="8081"; $env:AI_PORT="8000"
 #   $env:NGROK_BIN="C:\path\to\ngrok.exe"
 #   $env:NGROK_AUTHTOKEN="..."
@@ -14,8 +17,17 @@
 # Stop with Ctrl+C. This script stops only processes it starts.
 
 param(
+  [ValidateSet("dev", "prod")]
+  [string]$Profile = $(if ($env:PROFILE) { $env:PROFILE } else { "dev" }),
+  [switch]$Prod,
+  [switch]$Dev,
   [switch]$NoMobile
 )
+
+if ($Prod) { $Profile = "prod" }
+if ($Dev) { $Profile = "dev" }
+
+$SpringProfile = if ($env:SPRING_PROFILE) { $env:SPRING_PROFILE } else { $Profile }
 
 $ErrorActionPreference = "Stop"
 
@@ -55,10 +67,14 @@ function Test-PortOpen([int]$Port) {
 }
 
 function Show-LogTail([string]$LogName, [int]$Lines = 25) {
-  foreach ($suffix in @("err", "out")) {
-    $path = Join-Path $LogDir "$LogName.$suffix.log"
+  foreach ($suffix in @("err", "out", "log")) {
+    $path = if ($suffix -eq "log") {
+      Join-Path $LogDir "$LogName.log"
+    } else {
+      Join-Path $LogDir "$LogName.$suffix.log"
+    }
     if ((Test-Path $path) -and ((Get-Item $path).Length -gt 0)) {
-      Write-Host "----- $LogName.$suffix.log (last $Lines lines) -----" -ForegroundColor DarkGray
+      Write-Host "----- $(Split-Path $path -Leaf) (last $Lines lines) -----" -ForegroundColor DarkGray
       Get-Content $path -Tail $Lines | ForEach-Object { Write-Host "  $_" -ForegroundColor DarkGray }
     }
   }
@@ -137,6 +153,56 @@ function Start-LoggedProcess([string]$FilePath, [string[]]$ArgumentList, [string
     -WindowStyle Hidden
 }
 
+function Get-BackendJar {
+  $jars = Get-ChildItem (Join-Path $Root "backend\target\*.jar") -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -notlike "*.original" } |
+    Sort-Object LastWriteTime -Descending
+  if ($jars) { return $jars[0].FullName }
+  return $null
+}
+
+function Ensure-BackendJar {
+  $jar = Get-BackendJar
+  if ($jar) { return $jar }
+  Log "Building backend jar (first prod run - can take several minutes) -> $LogDir\backend-build.log"
+  $buildLog = Join-Path $LogDir "backend-build.log"
+  & $MvnBin @("-q", "-DskipTests", "package") *>$buildLog
+  if ($LASTEXITCODE -ne 0) {
+    Fail "Backend package failed - see $buildLog"
+    Show-LogTail "backend-build"
+    exit 1
+  }
+  $jar = Get-BackendJar
+  if (-not $jar) {
+    Fail "Backend jar not found after package - see $buildLog"
+    exit 1
+  }
+  Ok "Backend jar ready"
+  return $jar
+}
+
+function Ensure-WebProdBuild {
+  $buildId = Join-Path $Root ".next\BUILD_ID"
+  if (Test-Path $buildId) {
+    Ok "Next.js production build present (reusing)"
+    return
+  }
+  Log "Building Next.js for production (first prod run - can take a few minutes) -> $LogDir\web-build.log"
+  $buildLog = Join-Path $LogDir "web-build.log"
+  Push-Location $Root
+  try {
+    & $NpmBin run build *>$buildLog
+    if ($LASTEXITCODE -ne 0) {
+      Fail "Next.js build failed - see $buildLog"
+      Show-LogTail "web-build"
+      exit 1
+    }
+    Ok "Next.js production build ready"
+  } finally {
+    Pop-Location
+  }
+}
+
 function Stop-Started {
   Write-Host ""
   Log "Shutting down..."
@@ -169,6 +235,7 @@ $NodeBin = Get-ExePath @("node.exe", "node")
 $NpxBin = Get-ExePath @("npx.cmd", "npx.exe", "npx")
 $NpmBin = Get-ExePath @("npm.cmd", "npm.exe", "npm")
 $MvnBin = Get-ExePath @("mvn.cmd", "mvn.exe", "mvn")
+$JavaBin = Get-ExePath @("java.exe", "java")
 
 if (-not $NgrokBin) {
   Fail "ngrok is not installed or not on PATH."
@@ -183,6 +250,10 @@ if (-not $NodeBin) { Fail "node not found"; exit 1 }
 if (-not $NpxBin) { Fail "npx not found"; exit 1 }
 if (-not $NpmBin) { Fail "npm not found"; exit 1 }
 if (-not $MvnBin) { Fail "maven (mvn) not found"; exit 1 }
+if ($Profile -eq "prod" -and -not $JavaBin) {
+  Fail "java not found (JDK 17+ required for prod profile)"
+  exit 1
+}
 
 $NgrokToken = Get-NgrokToken
 if (-not $NgrokToken) {
@@ -193,6 +264,8 @@ if (-not $NgrokToken) {
 }
 
 try {
+  Log "Profile: $Profile (Spring profile: $SpringProfile)"
+
   if ($env:SKIP_POSTGRES_CHECK -ne "1") {
     if (Test-PortOpen 5432) { Ok "PostgreSQL reachable on :5432" }
     else { Warn "PostgreSQL not reachable on :5432 - start it before the backend will work" }
@@ -202,8 +275,14 @@ try {
   if (Test-PortOpen $BackendPort) {
     Ok "Backend already running on :$BackendPort (reusing)"
   } else {
-    Log "Starting Spring Boot backend -> $LogDir\backend.*.log"
-    $BackendProcess = Start-LoggedProcess $MvnBin @("-q", "spring-boot:run", "-Dspring-boot.run.profiles=dev") (Join-Path $Root "backend") "backend"
+    if ($Profile -eq "prod") {
+      $backendJar = Ensure-BackendJar
+      Log "Starting Spring Boot backend (prod jar, profile=$SpringProfile) -> $LogDir\backend.*.log"
+      $BackendProcess = Start-LoggedProcess $JavaBin @("-jar", $backendJar, "--spring.profiles.active=$SpringProfile") (Join-Path $Root "backend") "backend"
+    } else {
+      Log "Starting Spring Boot backend (dev, profile=$SpringProfile) -> $LogDir\backend.*.log"
+      $BackendProcess = Start-LoggedProcess $MvnBin @("-q", "spring-boot:run", "-Dspring-boot.run.profiles=$SpringProfile") (Join-Path $Root "backend") "backend"
+    }
     $StartedProcesses.Add($BackendProcess); $StartedPorts.Add($BackendPort)
   }
 
@@ -243,16 +322,26 @@ try {
   if (Test-PortOpen $WebPort) {
     Ok "Web already running on :$WebPort (reusing)"
   } else {
-    Log "Starting Next.js web -> $LogDir\web.*.log"
-    $WebProcess = Start-LoggedProcess $NpmBin @("run", "dev") $Root "web"
+    if ($Profile -eq "prod") {
+      Ensure-WebProdBuild
+      Log "Starting Next.js web (prod, next start) -> $LogDir\web.*.log"
+      $WebProcess = Start-LoggedProcess $NpmBin @("run", "start") $Root "web"
+    } else {
+      Log "Starting Next.js web (dev, next dev) -> $LogDir\web.*.log"
+      $WebProcess = Start-LoggedProcess $NpmBin @("run", "dev") $Root "web"
+    }
     $StartedProcesses.Add($WebProcess); $StartedPorts.Add($WebPort)
   }
 
-  # Backend gets a long timeout: the first `mvn spring-boot:run` on a fresh
-  # checkout downloads the dependency tree and compiles, which can take minutes.
-  $BackendTimeout = if ($env:BACKEND_TIMEOUT) { [int]$env:BACKEND_TIMEOUT } else { 360 }
+  if ($Profile -eq "prod") {
+    $BackendTimeout = if ($env:BACKEND_TIMEOUT) { [int]$env:BACKEND_TIMEOUT } else { 360 }
+    $WebTimeout = if ($env:WEB_TIMEOUT) { [int]$env:WEB_TIMEOUT } else { 180 }
+  } else {
+    $BackendTimeout = if ($env:BACKEND_TIMEOUT) { [int]$env:BACKEND_TIMEOUT } else { 120 }
+    $WebTimeout = if ($env:WEB_TIMEOUT) { [int]$env:WEB_TIMEOUT } else { 120 }
+  }
   $backendUp = Wait-ForHttp "http://127.0.0.1:$BackendPort/api/auth/registration-config" $BackendTimeout "Backend" "backend" $BackendProcess
-  Wait-ForHttp "http://127.0.0.1:$WebPort" 120 "Web" "web" $WebProcess | Out-Null
+  Wait-ForHttp "http://127.0.0.1:$WebPort" $WebTimeout "Web" "web" $WebProcess | Out-Null
 
   if (-not $backendUp) {
     Warn "Backend is not reachable. Mobile/web API calls will fail until it is up."
@@ -348,7 +437,7 @@ tunnels:
 
   Write-Host ""
   Write-Host "------------------------------------------------------------" -ForegroundColor Green
-  Write-Host " HWO is live over the internet" -ForegroundColor Green
+  Write-Host " HWO is live over the internet ($Profile profile)" -ForegroundColor Green
   Write-Host "------------------------------------------------------------" -ForegroundColor Green
   Write-Host "  Web app (open in browser):   $WebUrl"
   Write-Host "  Mobile API target:           $MobileEnvVal"

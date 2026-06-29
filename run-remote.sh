@@ -12,10 +12,14 @@
 #         The device talks to the backend through its own ngrok URL (:8080).
 #
 # Usage:
-#   ./run-remote.sh              # backend + AI + web + ngrok + Expo (mobile)
-#   ./run-remote.sh --no-mobile  # everything except the Expo mobile bundler
+#   ./run-remote.sh                      # dev (default): mvn spring-boot:run + next dev
+#   ./run-remote.sh --profile prod       # prod: packaged jar + next start (builds if needed)
+#   ./run-remote.sh --prod               # shorthand for --profile prod
+#   ./run-remote.sh --no-mobile          # skip Expo mobile bundler
 #
 # Env (all optional):
+#   PROFILE=dev|prod               default: dev
+#   SPRING_PROFILE=dev|prod        Spring profile (defaults to PROFILE)
 #   MOBILE_MODE=ngrok|tunnel|lan   default: ngrok
 #   BACKEND_PORT=8080  WEB_PORT=3000  METRO_PORT=8081  AI_PORT=8000
 #   NGROK_BIN=/path/to/ngrok       override ngrok binary
@@ -39,8 +43,33 @@ NGROK_JSON="$LOG_DIR/ngrok-tunnels.json"
 
 MOBILE_MODE="${MOBILE_MODE:-ngrok}"
 
+# Profile: "dev" = live-reload dev servers; "prod" = compiled artifacts
+# (packaged backend jar + `next start` on a production build).
+PROFILE="${PROFILE:-dev}"
 START_MOBILE=1
-[ "${1:-}" = "--no-mobile" ] && START_MOBILE=0
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --no-mobile) START_MOBILE=0 ;;
+    --prod) PROFILE=prod ;;
+    --dev) PROFILE=dev ;;
+    --profile) shift; PROFILE="${1:-dev}" ;;
+    --profile=*) PROFILE="${1#*=}" ;;
+    -h|--help)
+      echo "Usage: $0 [--profile dev|prod] [--prod|--dev] [--no-mobile]"; exit 0 ;;
+    *) echo "Unknown argument: $1" >&2; exit 1 ;;
+  esac
+  shift
+done
+
+case "$PROFILE" in
+  dev|prod) ;;
+  *) echo "Invalid --profile '$PROFILE' (use dev or prod)" >&2; exit 1 ;;
+esac
+
+# Spring profile to activate (prod has no application-prod.yml, so it falls back
+# to application.yml defaults — localhost DB — which is what we want here).
+SPRING_PROFILE="${SPRING_PROFILE:-$PROFILE}"
 
 # Track only the processes we start, so cleanup never kills pre-existing servers.
 PIDS=()
@@ -160,6 +189,41 @@ ngrok_install_hint() {
 HINT
 }
 
+find_backend_jar() {
+  local jar
+  jar=$(ls -t "$ROOT/backend/target/"*.jar 2>/dev/null | grep -v '\.original$' | head -1)
+  [ -n "$jar" ] && echo "$jar"
+}
+
+ensure_backend_jar() {
+  local jar
+  jar="$(find_backend_jar)"
+  if [ -n "$jar" ]; then echo "$jar"; return 0; fi
+  log "Building backend jar (first prod run — can take several minutes) → $LOG_DIR/backend-build.log"
+  if ( cd "$ROOT/backend" && mvn -q -DskipTests package ) >"$LOG_DIR/backend-build.log" 2>&1; then
+    jar="$(find_backend_jar)"
+    [ -n "$jar" ] && { ok "Backend jar ready"; echo "$jar"; return 0; }
+  fi
+  err "Backend package failed — see $LOG_DIR/backend-build.log"
+  tail -25 "$LOG_DIR/backend-build.log" 2>/dev/null
+  return 1
+}
+
+ensure_web_prod_build() {
+  if [ -d "$ROOT/.next" ] && [ -f "$ROOT/.next/BUILD_ID" ]; then
+    ok "Next.js production build present (reusing)"
+    return 0
+  fi
+  log "Building Next.js for production (first prod run — can take a few minutes) → $LOG_DIR/web-build.log"
+  if ( cd "$ROOT" && npm run build ) >"$LOG_DIR/web-build.log" 2>&1; then
+    ok "Next.js production build ready"
+    return 0
+  fi
+  err "Next.js build failed — see $LOG_DIR/web-build.log"
+  tail -25 "$LOG_DIR/web-build.log" 2>/dev/null
+  return 1
+}
+
 cleanup() {
   echo
   log "Shutting down…"
@@ -179,13 +243,31 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+show_log_tail() {
+  local name="$1" lines="${2:-25}"
+  for suffix in err out log; do
+    local path="$LOG_DIR/${name}.${suffix}.log"
+    [ -f "$path" ] || path="$LOG_DIR/${name}.log"
+    if [ -f "$path" ] && [ -s "$path" ]; then
+      echo "----- ${name} (last $lines lines) -----"
+      tail -n "$lines" "$path" | sed 's/^/  /'
+    fi
+  done
+}
+
 wait_for_http() {
-  # wait_for_http <url> <timeout-seconds> <label>
-  local url="$1" timeout="$2" label="$3" waited=0
+  # wait_for_http <url> <timeout> <label> [logName] [pid]
+  local url="$1" timeout="$2" label="$3" log_name="${4:-}" pid="${5:-}" waited=0
   while ! curl -s -o /dev/null -m 3 "$url"; do
+    if [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; then
+      err "$label process exited before becoming reachable."
+      [ -n "$log_name" ] && show_log_tail "$log_name"
+      return 1
+    fi
     sleep 2; waited=$((waited + 2))
     if [ "$waited" -ge "$timeout" ]; then
       warn "$label not responding after ${timeout}s (continuing anyway)"
+      [ -n "$log_name" ] && show_log_tail "$log_name"
       return 1
     fi
   done
@@ -205,6 +287,9 @@ load_node_env || true
 command -v node >/dev/null 2>&1 || { err "node not found (install Node.js or load nvm/fnm/volta)"; exit 1; }
 command -v mvn  >/dev/null 2>&1 || { err "maven (mvn) not found"; exit 1; }
 command -v curl >/dev/null 2>&1 || { err "curl not found"; exit 1; }
+if [ "$PROFILE" = "prod" ]; then
+  command -v java >/dev/null 2>&1 || { err "java not found (JDK 17+ required for prod profile)"; exit 1; }
+fi
 
 resolve_authtoken() {
   if [ -n "${NGROK_AUTHTOKEN:-}" ]; then echo "$NGROK_AUTHTOKEN"; return; fi
@@ -233,14 +318,25 @@ if [ "${SKIP_POSTGRES_CHECK:-0}" != "1" ]; then
   else warn "PostgreSQL not reachable on :5432 — start it before the backend will work"; fi
 fi
 
+log "Profile: $PROFILE (Spring profile: $SPRING_PROFILE)"
+
 # ── backend ────────────────────────────────────────────────────────────────
+BackendProcess=""
 if port_open "$BACKEND_PORT"; then
   ok "Backend already running on :$BACKEND_PORT (reusing)"
 else
-  log "Starting Spring Boot backend → $LOG_DIR/backend.log"
-  ( cd "$ROOT/backend" && exec mvn -q spring-boot:run -Dspring-boot.run.profiles=dev ) \
-    >"$LOG_DIR/backend.log" 2>&1 &
-  PIDS+=("$!"); STARTED_PORTS+=("$BACKEND_PORT")
+  if [ "$PROFILE" = "prod" ]; then
+    BACKEND_JAR="$(ensure_backend_jar)" || exit 1
+    log "Starting Spring Boot backend (prod jar, profile=$SPRING_PROFILE) → $LOG_DIR/backend.log"
+    ( cd "$ROOT/backend" && exec java -jar "$BACKEND_JAR" --spring.profiles.active="$SPRING_PROFILE" ) \
+      >"$LOG_DIR/backend.log" 2>&1 &
+  else
+    log "Starting Spring Boot backend (dev, profile=$SPRING_PROFILE) → $LOG_DIR/backend.log"
+    ( cd "$ROOT/backend" && exec mvn -q spring-boot:run -Dspring-boot.run.profiles="$SPRING_PROFILE" ) \
+      >"$LOG_DIR/backend.log" 2>&1 &
+  fi
+  BackendProcess=$!
+  PIDS+=("$BackendProcess"); STARTED_PORTS+=("$BACKEND_PORT")
 fi
 
 # ── AI service (optional, auto-bootstraps its venv on first run) ─────────────
@@ -272,17 +368,33 @@ else
   fi
 fi
 
-# ── web (Next dev) ──────────────────────────────────────────────────────────
+# ── web (Next.js) ───────────────────────────────────────────────────────────
+WebProcess=""
 if port_open "$WEB_PORT"; then
   ok "Web already running on :$WEB_PORT (reusing)"
 else
-  log "Starting Next.js web → $LOG_DIR/web.log"
-  ( cd "$ROOT" && exec npm run dev ) >"$LOG_DIR/web.log" 2>&1 &
-  PIDS+=("$!"); STARTED_PORTS+=("$WEB_PORT")
+  if [ "$PROFILE" = "prod" ]; then
+    ensure_web_prod_build || exit 1
+    log "Starting Next.js web (prod, next start) → $LOG_DIR/web.log"
+    ( cd "$ROOT" && exec npm run start ) >"$LOG_DIR/web.log" 2>&1 &
+  else
+    log "Starting Next.js web (dev, next dev) → $LOG_DIR/web.log"
+    ( cd "$ROOT" && exec npm run dev ) >"$LOG_DIR/web.log" 2>&1 &
+  fi
+  WebProcess=$!
+  PIDS+=("$WebProcess"); STARTED_PORTS+=("$WEB_PORT")
 fi
 
-wait_for_http "http://127.0.0.1:$BACKEND_PORT/api/auth/registration-config" 120 "Backend"
-wait_for_http "http://127.0.0.1:$WEB_PORT" 120 "Web"
+# Prod builds take longer on first compile; dev hot-reload is quicker to bind.
+if [ "$PROFILE" = "prod" ]; then
+  BACKEND_TIMEOUT="${BACKEND_TIMEOUT:-360}"
+  WEB_TIMEOUT="${WEB_TIMEOUT:-180}"
+else
+  BACKEND_TIMEOUT="${BACKEND_TIMEOUT:-120}"
+  WEB_TIMEOUT="${WEB_TIMEOUT:-120}"
+fi
+wait_for_http "http://127.0.0.1:$BACKEND_PORT/api/auth/registration-config" "$BACKEND_TIMEOUT" "Backend" "backend" "$BackendProcess"
+wait_for_http "http://127.0.0.1:$WEB_PORT" "$WEB_TIMEOUT" "Web" "web" "$WebProcess"
 
 # ── ngrok (tunnels: web + backend, plus metro when mobile uses ngrok mode) ──
 WANT_METRO=0
@@ -353,7 +465,7 @@ ok "Wrote mobile/.env  ($MOBILE_ENV_VAR=$MOBILE_ENV_VAL)"
 cat <<SUMMARY
 
 ${c_green}────────────────────────────────────────────────────────────${c_off}
-${c_green} HWO is live over the internet${c_off}
+${c_green} HWO is live over the internet${c_off}  (${PROFILE} profile)
 ${c_green}────────────────────────────────────────────────────────────${c_off}
   Web app (open in browser):   ${c_blue}$WEB_URL${c_off}
   Mobile API target:           ${c_blue}$MOBILE_ENV_VAL${c_off}
