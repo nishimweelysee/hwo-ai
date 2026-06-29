@@ -186,22 +186,28 @@ function Ensure-BackendJar {
   return $jar
 }
 
-function Ensure-WebProdBuild {
+function Ensure-WebProdBuild([string]$BackendUrl) {
+  # The /api proxy rewrite is baked into the prod build from BACKEND_API_URL, so a
+  # cached build with a different target must be rebuilt to avoid proxying wrong.
   $buildId = Join-Path $Root ".next\BUILD_ID"
-  if (Test-Path $buildId) {
-    Ok "Next.js production build present (reusing)"
+  $stamp = Join-Path $Root ".next\.hwo-backend-url"
+  $stampVal = if (Test-Path $stamp) { (Get-Content $stamp -Raw).Trim() } else { "" }
+  if ((Test-Path $buildId) -and ($stampVal -eq $BackendUrl)) {
+    Ok "Next.js production build present (reusing, backend=$BackendUrl)"
     return
   }
-  Log "Building Next.js for production (first prod run - can take a few minutes) -> $LogDir\web-build.log"
+  Log "Building Next.js for production (backend=$BackendUrl) -> $LogDir\web-build.log"
   $buildLog = Join-Path $LogDir "web-build.log"
   Push-Location $Root
   try {
+    $env:BACKEND_API_URL = $BackendUrl
     & $NpmBin run build *>$buildLog
     if ($LASTEXITCODE -ne 0) {
       Fail "Next.js build failed - see $buildLog"
       Show-LogTail "web-build"
       exit 1
     }
+    Set-Content -Path $stamp -Value $BackendUrl -Encoding UTF8
     Ok "Next.js production build ready"
   } finally {
     Pop-Location
@@ -323,16 +329,18 @@ try {
     }
   }
 
+  $WebBackendUrl = if ($env:BACKEND_API_URL) { $env:BACKEND_API_URL } else { "http://localhost:$BackendPort" }
   $WebProcess = $null
   if (Test-PortOpen $WebPort) {
     Ok "Web already running on :$WebPort (reusing)"
   } else {
+    $env:BACKEND_API_URL = $WebBackendUrl
     if ($Profile -eq "prod") {
-      Ensure-WebProdBuild
-      Log "Starting Next.js web (prod, next start) -> $LogDir\web.*.log"
+      Ensure-WebProdBuild $WebBackendUrl
+      Log "Starting Next.js web (prod, next start, backend=$WebBackendUrl) -> $LogDir\web.*.log"
       $WebProcess = Start-LoggedProcess $NpmBin @("run", "start") $Root "web"
     } else {
-      Log "Starting Next.js web (dev, next dev) -> $LogDir\web.*.log"
+      Log "Starting Next.js web (dev, next dev, backend=$WebBackendUrl) -> $LogDir\web.*.log"
       $WebProcess = Start-LoggedProcess $NpmBin @("run", "dev") $Root "web"
     }
     $StartedProcesses.Add($WebProcess); $StartedPorts.Add($WebPort)

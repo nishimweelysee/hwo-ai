@@ -209,13 +209,21 @@ ensure_backend_jar() {
   return 1
 }
 
+# The /api proxy rewrite is baked into the prod build from BACKEND_API_URL, so it
+# must match the backend port this script runs. A cached build with a different
+# target is rebuilt to avoid silently proxying to the wrong backend.
+WEB_BACKEND_URL="${BACKEND_API_URL:-http://localhost:$BACKEND_PORT}"
+WEB_BUILD_STAMP="$ROOT/.next/.hwo-backend-url"
+
 ensure_web_prod_build() {
-  if [ -d "$ROOT/.next" ] && [ -f "$ROOT/.next/BUILD_ID" ]; then
-    ok "Next.js production build present (reusing)"
+  if [ -d "$ROOT/.next" ] && [ -f "$ROOT/.next/BUILD_ID" ] \
+    && [ "$(cat "$WEB_BUILD_STAMP" 2>/dev/null)" = "$WEB_BACKEND_URL" ]; then
+    ok "Next.js production build present (reusing, backend=$WEB_BACKEND_URL)"
     return 0
   fi
-  log "Building Next.js for production (first prod run — can take a few minutes) → $LOG_DIR/web-build.log"
-  if ( cd "$ROOT" && npm run build ) >"$LOG_DIR/web-build.log" 2>&1; then
+  log "Building Next.js for production (backend=$WEB_BACKEND_URL) → $LOG_DIR/web-build.log"
+  if ( cd "$ROOT" && BACKEND_API_URL="$WEB_BACKEND_URL" npm run build ) >"$LOG_DIR/web-build.log" 2>&1; then
+    echo "$WEB_BACKEND_URL" >"$WEB_BUILD_STAMP" 2>/dev/null || true
     ok "Next.js production build ready"
     return 0
   fi
@@ -373,13 +381,14 @@ WebProcess=""
 if port_open "$WEB_PORT"; then
   ok "Web already running on :$WEB_PORT (reusing)"
 else
+  WEB_BACKEND_URL="${BACKEND_API_URL:-http://localhost:$BACKEND_PORT}"
   if [ "$PROFILE" = "prod" ]; then
     ensure_web_prod_build || exit 1
-    log "Starting Next.js web (prod, next start) → $LOG_DIR/web.log"
-    ( cd "$ROOT" && exec npm run start ) >"$LOG_DIR/web.log" 2>&1 &
+    log "Starting Next.js web (prod, next start, backend=$WEB_BACKEND_URL) → $LOG_DIR/web.log"
+    ( cd "$ROOT" && exec env BACKEND_API_URL="$WEB_BACKEND_URL" npm run start ) >"$LOG_DIR/web.log" 2>&1 &
   else
-    log "Starting Next.js web (dev, next dev) → $LOG_DIR/web.log"
-    ( cd "$ROOT" && exec npm run dev ) >"$LOG_DIR/web.log" 2>&1 &
+    log "Starting Next.js web (dev, next dev, backend=$WEB_BACKEND_URL) → $LOG_DIR/web.log"
+    ( cd "$ROOT" && exec env BACKEND_API_URL="$WEB_BACKEND_URL" npm run dev ) >"$LOG_DIR/web.log" 2>&1 &
   fi
   WebProcess=$!
   PIDS+=("$WebProcess"); STARTED_PORTS+=("$WEB_PORT")
