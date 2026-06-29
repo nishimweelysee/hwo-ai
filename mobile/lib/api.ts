@@ -22,6 +22,8 @@ type RequestOptions = {
 async function buildHeaders(auth: boolean): Promise<Record<string, string>> {
   const headers: Record<string, string> = {
     Accept: "application/json",
+    // Bypass ngrok's free-tier browser interstitial so API calls get JSON, not HTML.
+    "ngrok-skip-browser-warning": "true",
   };
   if (auth) {
     const token = await getToken();

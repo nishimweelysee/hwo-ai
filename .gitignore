@@ -43,3 +43,6 @@ next-env.d.ts
 # python (ai-service)
 ai-service/.venv/
 **/__pycache__/
+
+# run-remote.sh runtime logs + generated ngrok config
+.remote-logs/
