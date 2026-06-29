@@ -207,15 +207,36 @@ try {
     $StartedProcesses.Add($BackendProcess); $StartedPorts.Add($BackendPort)
   }
 
+  $AiVenv = Join-Path $Root "ai-service\.venv"
+  $AiUvicorn = Join-Path $AiVenv "Scripts\uvicorn.exe"
   if (Test-PortOpen $AiPort) {
     Ok "AI service already running on :$AiPort (reusing)"
-  } elseif (Test-Path (Join-Path $Root "ai-service\.venv\Scripts\uvicorn.exe")) {
-    Log "Starting AI service -> $LogDir\ai.*.log"
-    $uvicorn = Join-Path $Root "ai-service\.venv\Scripts\uvicorn.exe"
-    $p = Start-LoggedProcess $uvicorn @("main:app", "--host", "0.0.0.0", "--port", "$AiPort") (Join-Path $Root "ai-service") "ai"
-    $StartedProcesses.Add($p); $StartedPorts.Add($AiPort)
   } else {
-    Warn "AI service venv missing (ai-service\.venv) - skipping; backend uses its fallback model"
+    if (-not (Test-Path $AiUvicorn)) {
+      $PyBin = Get-ExePath @("py.exe", "py", "python.exe", "python", "python3")
+      if ($PyBin) {
+        Log "Setting up AI service venv (first run - this can take a few minutes) -> $LogDir\ai-setup.log"
+        $setupLog = Join-Path $LogDir "ai-setup.log"
+        try {
+          & $PyBin -m venv $AiVenv *>$setupLog
+          $AiPython = Join-Path $AiVenv "Scripts\python.exe"
+          & $AiPython -m pip install --quiet --upgrade pip *>>$setupLog
+          & $AiPython -m pip install -q -r (Join-Path $Root "ai-service\requirements.txt") *>>$setupLog
+          if (Test-Path $AiUvicorn) { Ok "AI venv ready" }
+          else { Warn "AI venv setup incomplete (see $setupLog) - backend will use its fallback model" }
+        } catch {
+          Warn "AI venv setup failed (see $setupLog) - backend will use its fallback model"
+        }
+      } else {
+        Warn "python not found - skipping AI service; backend uses its fallback model"
+      }
+    }
+    if (Test-Path $AiUvicorn) {
+      Log "Starting AI service -> $LogDir\ai.*.log"
+      $p = Start-LoggedProcess $AiUvicorn @("main:app", "--host", "0.0.0.0", "--port", "$AiPort") (Join-Path $Root "ai-service") "ai"
+      $StartedProcesses.Add($p); $StartedPorts.Add($AiPort)
+      Warn "AI service warms up on first import (~1-2 min); backend falls back until it is healthy"
+    }
   }
 
   $WebProcess = $null

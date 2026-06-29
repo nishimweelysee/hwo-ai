@@ -243,16 +243,33 @@ else
   PIDS+=("$!"); STARTED_PORTS+=("$BACKEND_PORT")
 fi
 
-# ── AI service (optional) ───────────────────────────────────────────────────
+# ── AI service (optional, auto-bootstraps its venv on first run) ─────────────
+AI_VENV="$ROOT/ai-service/.venv"
+AI_UVICORN="$AI_VENV/bin/uvicorn"
 if port_open "$AI_PORT"; then
   ok "AI service already running on :$AI_PORT (reusing)"
-elif [ -x "$ROOT/ai-service/.venv/bin/uvicorn" ]; then
-  log "Starting AI service → $LOG_DIR/ai.log"
-  ( cd "$ROOT/ai-service" && exec .venv/bin/uvicorn main:app --host 0.0.0.0 --port "$AI_PORT" ) \
-    >"$LOG_DIR/ai.log" 2>&1 &
-  PIDS+=("$!"); STARTED_PORTS+=("$AI_PORT")
 else
-  warn "AI service venv missing (ai-service/.venv) — skipping; backend uses its fallback model"
+  if [ ! -x "$AI_UVICORN" ]; then
+    if command -v python3 >/dev/null 2>&1; then
+      log "Setting up AI service venv (first run — this can take a few minutes) → $LOG_DIR/ai-setup.log"
+      if python3 -m venv "$AI_VENV" >"$LOG_DIR/ai-setup.log" 2>&1 \
+        && "$AI_VENV/bin/python" -m pip install --quiet --upgrade pip >>"$LOG_DIR/ai-setup.log" 2>&1 \
+        && "$AI_VENV/bin/python" -m pip install -q -r "$ROOT/ai-service/requirements.txt" >>"$LOG_DIR/ai-setup.log" 2>&1; then
+        ok "AI venv ready"
+      else
+        warn "AI venv setup failed (see $LOG_DIR/ai-setup.log) — backend will use its fallback model"
+      fi
+    else
+      warn "python3 not found — skipping AI service; backend uses its fallback model"
+    fi
+  fi
+  if [ -x "$AI_UVICORN" ]; then
+    log "Starting AI service → $LOG_DIR/ai.log"
+    ( cd "$ROOT/ai-service" && exec "$AI_UVICORN" main:app --host 0.0.0.0 --port "$AI_PORT" ) \
+      >"$LOG_DIR/ai.log" 2>&1 &
+    PIDS+=("$!"); STARTED_PORTS+=("$AI_PORT")
+    warn "AI service warms up on first import (~1-2 min); backend falls back until it is healthy"
+  fi
 fi
 
 # ── web (Next dev) ──────────────────────────────────────────────────────────
