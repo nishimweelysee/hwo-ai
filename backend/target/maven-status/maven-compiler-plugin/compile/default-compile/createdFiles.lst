@@ -64,6 +64,7 @@ com/hwo/service/SchedulingAiService.class
 com/hwo/controller/AuditSearchController.class
 com/hwo/controller/ProfileController$1.class
 com/hwo/controller/ConfigurationController.class
+com/hwo/service/WorkloadQueryService.class
 com/hwo/service/ImportService.class
 com/hwo/service/SettingsService$1.class
 com/hwo/config/DataInitializer.class

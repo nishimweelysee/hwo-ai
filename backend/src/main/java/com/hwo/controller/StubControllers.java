@@ -93,6 +93,36 @@ public class StubControllers {
         return ResponseEntity.ok(reportService.listReports());
     }
 
+    @GetMapping("/reports/operational")
+    public ResponseEntity<Map<String, Object>> operationalReport() {
+        return ResponseEntity.ok(reportService.operationalReport());
+    }
+
+    @GetMapping("/reports/strategic")
+    public ResponseEntity<Map<String, Object>> strategicReport() {
+        return ResponseEntity.ok(reportService.strategicReport());
+    }
+
+    @PostMapping("/reports/custom-data")
+    public ResponseEntity<Map<String, Object>> customReportData(@RequestBody Map<String, ?> body) {
+        List<String> sections = body.get("sections") instanceof List<?> list
+            ? list.stream().map(String::valueOf).filter(s -> !s.isBlank()).toList()
+            : List.of();
+        return ResponseEntity.ok(reportService.customReportData(sections));
+    }
+
+    @GetMapping("/reports/wellness")
+    public ResponseEntity<Map<String, Object>> wellnessReport() {
+        return ResponseEntity.ok(reportService.wellnessReport());
+    }
+
+    @GetMapping("/reports/scheduling")
+    public ResponseEntity<Map<String, Object>> schedulingReport(
+            @RequestParam(required = false) String date) {
+        LocalDate start = date != null && !date.isBlank() ? LocalDate.parse(date) : LocalDate.now();
+        return ResponseEntity.ok(reportService.schedulingReport(start));
+    }
+
     @GetMapping("/reports/benchmark")
     public ResponseEntity<Map<String, Object>> benchmark() {
         return ResponseEntity.ok(reportService.benchmark());
