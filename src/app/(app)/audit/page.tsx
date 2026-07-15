@@ -39,11 +39,16 @@ export default function AuditPage() {
 
   return (
     <div className="space-y-8">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-800">Audit & Logging</h2>
-        <p className="text-slate-600">
-          Comprehensive activity tracking and audit trail
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="flex items-center gap-2 text-2xl font-bold text-slate-800">
+            <ClipboardList className="h-7 w-7 text-teal-600" />
+            Audit & Logging
+          </h2>
+          <p className="mt-1 text-slate-600">
+            Comprehensive activity tracking, change history, and anomaly detection
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-4">
@@ -105,29 +110,39 @@ export default function AuditPage() {
           <span className="text-sm text-slate-500">Filter by type above</span>
         </div>
         <div className="divide-y divide-slate-100">
-          {logs.map((log, i) => (
-            <div key={i} className="flex items-center gap-4 p-4">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100">
-                <ClipboardList className="h-4 w-4 text-slate-600" />
-              </div>
-              <div className="flex-1">
-                <p className="font-medium text-slate-800">{log.action}</p>
-                <p className="text-sm text-slate-500">{log.user}</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <span
-                  className={`rounded px-2 py-0.5 text-xs font-medium ${
-                    log.type === "write" || log.type === "import"
-                      ? "bg-amber-100 text-amber-700"
-                      : "bg-slate-100 text-slate-600"
-                  }`}
-                >
-                  {log.type}
-                </span>
-                <span className="text-sm text-slate-500">{log.time}</span>
-              </div>
+          {logs.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <ClipboardList className="mb-3 h-10 w-10 text-slate-300" />
+              <p className="font-medium text-slate-600">No audit logs found</p>
+              <p className="mt-1 text-sm text-slate-400">
+                {searchQuery ? `No results for "${searchQuery}" — try a different search term.` : "Activity will appear here as users perform actions in the system."}
+              </p>
             </div>
-          ))}
+          ) : (
+            logs.map((log, i) => (
+              <div key={i} className="flex items-center gap-4 p-4 hover:bg-slate-50/60 transition-colors">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100">
+                  <ClipboardList className="h-4 w-4 text-slate-600" />
+                </div>
+                <div className="flex-1">
+                  <p className="font-medium text-slate-800">{log.action}</p>
+                  <p className="text-sm text-slate-500">{log.user}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`rounded px-2 py-0.5 text-xs font-medium ${
+                      log.type === "write" || log.type === "import"
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-slate-100 text-slate-600"
+                    }`}
+                  >
+                    {log.type}
+                  </span>
+                  <span className="text-sm text-slate-500">{log.time}</span>
+                </div>
+              </div>
+            ))
+          )}
         </div>
       </div>
 

@@ -37,12 +37,120 @@ textarea::placeholder {
   opacity: 1;
 }
 
-table tbody td {
-  color: #334155;
+/* ── Table base styles ───────────────────────────────────────────── */
+table {
+  width: 100%;
+  font-size: 0.875rem; /* text-sm */
+  border-collapse: collapse;
 }
 
 table thead th {
-  color: #475569;
+  color: #475569; /* slate-600 */
+  font-size: 0.75rem; /* text-xs */
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding-bottom: 0.625rem;
+  padding-right: 1rem;
+  text-align: left;
+  border-bottom: 1px solid #e2e8f0; /* slate-200 */
+  white-space: nowrap;
+}
+
+table tbody td {
+  color: #334155; /* slate-700 */
+  padding-top: 0.625rem;
+  padding-bottom: 0.625rem;
+  padding-right: 1rem;
+  border-bottom: 1px solid #f1f5f9; /* slate-100 */
+  vertical-align: middle;
+}
+
+/* Row hover */
+table tbody tr {
+  transition: background-color 0.1s ease;
+}
+table tbody tr:hover {
+  background-color: #f8fafc; /* slate-50 */
+}
+
+/* Zebra striping — every even row gets a very subtle tint */
+table tbody tr:nth-child(even) {
+  background-color: #f8fafc;
+}
+table tbody tr:nth-child(even):hover {
+  background-color: #f1f5f9; /* slightly darker on hover */
+}
+
+/* Last row no border */
+table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* ── Button utility classes ──────────────────────────────────────── */
+
+/* Primary: solid teal — use for the ONE main action on a page/card */
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 0.5rem;
+  background-color: #0d9488; /* teal-600 */
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #ffffff;
+  transition: background-color 0.15s ease;
+}
+.btn-primary:hover {
+  background-color: #0f766e; /* teal-700 */
+}
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Secondary: outline — use for secondary/cancel actions */
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 0.5rem;
+  border: 1px solid #e2e8f0; /* slate-200 */
+  background-color: #ffffff;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #334155; /* slate-700 */
+  transition: background-color 0.15s ease;
+}
+.btn-secondary:hover {
+  background-color: #f8fafc; /* slate-50 */
+}
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Danger: for destructive actions */
+.btn-danger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: 0.5rem;
+  background-color: #e11d48; /* rose-600 */
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #ffffff;
+  transition: background-color 0.15s ease;
+}
+.btn-danger:hover {
+  background-color: #be123c; /* rose-700 */
+}
+.btn-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Border-only buttons without an explicit text color */

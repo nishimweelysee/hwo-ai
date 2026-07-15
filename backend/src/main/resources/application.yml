@@ -2,7 +2,7 @@ spring:
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:hwo}
     username: ${DB_USER:postgres}
-    password: ${DB_PASSWORD:postgres}
+    password: ${DB_PASSWORD:123}
     driver-class-name: org.postgresql.Driver
   servlet:
     multipart:
@@ -21,6 +21,20 @@ spring:
           batch_size: 500
         order_inserts: true
         order_updates: true
+  # ── Email (OTP) ────────────────────────────────────────────────
+  # Set MAIL_HOST, MAIL_PORT, MAIL_USER, MAIL_PASS via environment variables.
+  # If left unconfigured the OTP code is printed to the backend console log instead.
+  mail:
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USER:}
+    password: ${MAIL_PASS:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
 
 server:
   port: ${SERVER_PORT:8080}

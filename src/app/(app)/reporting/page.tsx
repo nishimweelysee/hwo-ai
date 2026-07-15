@@ -150,6 +150,54 @@ export default function ReportingPage() {
         </p>
       </div>
 
+      {/* KPI summary cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg bg-teal-100 p-2"><ClipboardList className="h-5 w-5 text-teal-600" /></div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Reports generated</p>
+              <p className="mt-1 text-2xl font-bold text-slate-800">{reports.length}</p>
+              <p className="mt-1 text-xs text-slate-400">Last 20 on record</p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg bg-indigo-100 p-2"><Calendar className="h-5 w-5 text-indigo-600" /></div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Scheduled reports</p>
+              <p className="mt-1 text-2xl font-bold text-slate-800">—</p>
+              <p className="mt-1 text-xs text-slate-400">See section below</p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg bg-amber-100 p-2"><TrendingUp className="h-5 w-5 text-amber-600" /></div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Depts benchmarked</p>
+              <p className="mt-1 text-2xl font-bold text-slate-800">{benchmarks.length}</p>
+              <p className="mt-1 text-xs text-slate-400">vs workload target</p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className={`rounded-lg p-2 ${benchmarks.filter(b => b.status !== "compliant").length > 0 ? "bg-rose-100" : "bg-emerald-100"}`}>
+              <Heart className={`h-5 w-5 ${benchmarks.filter(b => b.status !== "compliant").length > 0 ? "text-rose-600" : "text-emerald-600"}`} />
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Depts above target</p>
+              <p className={`mt-1 text-2xl font-bold ${benchmarks.filter(b => b.status !== "compliant").length > 0 ? "text-rose-700" : "text-slate-800"}`}>
+                {benchmarks.filter(b => b.status !== "compliant").length}
+              </p>
+              <p className="mt-1 text-xs text-slate-400">Workload exceeding limit</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
         <h3 className="mb-4 font-semibold text-slate-800">Export Format</h3>
         <div className="flex flex-wrap gap-3">

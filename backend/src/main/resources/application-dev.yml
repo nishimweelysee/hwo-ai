@@ -3,4 +3,4 @@ spring:
   datasource:
     url: jdbc:postgresql://localhost:5432/hwo
     username: postgres
-    password: postgres
+    password: 123

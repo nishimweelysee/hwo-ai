@@ -388,7 +388,7 @@ export default function UserManagementPage() {
           <button
             type="button"
             onClick={openCreate}
-            className="inline-flex items-center gap-2 rounded-lg bg-teal-500 px-4 py-2 text-sm font-medium text-white hover:bg-teal-600"
+            className="btn-primary"
           >
             <Plus className="h-4 w-4" /> Add user
           </button>
@@ -556,14 +556,14 @@ export default function UserManagementPage() {
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="rounded-lg bg-teal-500 px-4 py-2 text-sm font-medium text-white hover:bg-teal-600 disabled:opacity-50"
+              className="btn-primary disabled:opacity-50"
             >
               {saving ? "Saving…" : editingId ? "Update user" : "Create user"}
             </button>
             <button
               type="button"
               onClick={resetForm}
-              className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+              className="btn-secondary"
             >
               Cancel
             </button>

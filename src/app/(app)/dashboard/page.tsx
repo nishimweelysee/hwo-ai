@@ -473,6 +473,164 @@ export default function DashboardPage() {
         )}
       </div>
 
+      {/* ── Organisation Health Score ── */}
+      {!loading && (() => {
+        const workloadScore = avgWorkload != null
+          ? Math.max(0, 100 - Math.max(0, (avgWorkload - (alertThreshold - 20)) * 2))
+          : 50;
+        const wellnessScore = (() => {
+          const total = (burnoutDist?.low ?? 0) + (burnoutDist?.medium ?? 0) + (burnoutDist?.high ?? 0);
+          if (!total) return 50;
+          return Math.round(((burnoutDist?.low ?? 0) / total) * 100);
+        })();
+        const coverageScore = coveragePercent ?? 50;
+        const shortagesPenalty = Math.min(40, staffingShortages.length * 10);
+        const healthScore = Math.round(
+          Math.max(0, Math.min(100,
+            (workloadScore * 0.35) + (wellnessScore * 0.35) + ((coverageScore - shortagesPenalty) * 0.30)
+          ))
+        );
+        const { label, color, bg, ring } =
+          healthScore >= 80 ? { label: "Healthy", color: "text-emerald-700", bg: "bg-emerald-50", ring: "ring-emerald-200" } :
+          healthScore >= 60 ? { label: "Moderate", color: "text-amber-700", bg: "bg-amber-50", ring: "ring-amber-200" } :
+          { label: "At Risk", color: "text-rose-700", bg: "bg-rose-50", ring: "ring-rose-200" };
+        return (
+          <div className={`flex flex-wrap items-center gap-6 rounded-xl border p-5 shadow-sm ring-1 ${bg} ${ring}`}>
+            <div className="flex items-center gap-4">
+              <div className="relative flex h-20 w-20 items-center justify-center">
+                <svg className="h-20 w-20 -rotate-90" viewBox="0 0 36 36">
+                  <circle cx="18" cy="18" r="15.9" fill="none" stroke="#e2e8f0" strokeWidth="3" />
+                  <circle
+                    cx="18" cy="18" r="15.9" fill="none"
+                    stroke={healthScore >= 80 ? "#059669" : healthScore >= 60 ? "#d97706" : "#e11d48"}
+                    strokeWidth="3"
+                    strokeDasharray={`${healthScore} ${100 - healthScore}`}
+                    strokeLinecap="round"
+                  />
+                </svg>
+                <span className={`absolute text-lg font-bold ${color}`}>{healthScore}</span>
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">Organisation Health</p>
+                <p className={`mt-0.5 text-2xl font-bold ${color}`}>{label}</p>
+                <p className="mt-0.5 text-xs text-slate-500">Composite score out of 100</p>
+              </div>
+            </div>
+            <div className="flex flex-1 flex-wrap gap-4">
+              {[
+                { label: "Workload", score: Math.round(workloadScore), hint: `${avgWorkload != null ? Math.round(avgWorkload) : "—"}% avg utilisation` },
+                { label: "Wellness", score: wellnessScore, hint: `${wellnessCount} staff at risk` },
+                { label: "Coverage", score: Math.round(Math.max(0, coverageScore - shortagesPenalty)), hint: `${coveragePercent != null ? Math.round(coveragePercent) : "—"}% shifts filled` },
+              ].map((item) => (
+                <div key={item.label} className="min-w-[100px] flex-1">
+                  <p className="text-xs font-medium text-slate-500">{item.label}</p>
+                  <div className="mt-1.5 h-2 w-full overflow-hidden rounded-full bg-slate-200">
+                    <div
+                      className={`h-full rounded-full transition-all ${item.score >= 80 ? "bg-emerald-500" : item.score >= 60 ? "bg-amber-500" : "bg-rose-500"}`}
+                      style={{ width: `${item.score}%` }}
+                    />
+                  </div>
+                  <p className="mt-1 text-xs text-slate-400">{item.hint}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Critical alerts — pinned near top so managers see them immediately ── */}
+      {!loading && (wellnessAlerts.length > 0 || staffingShortages.length > 0) && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {/* Wellness alerts */}
+          {wellnessAlerts.length > 0 && showWellness && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50/60 p-5 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="flex items-center gap-2 font-semibold text-rose-900">
+                  <AlertTriangle className="h-4 w-4" />
+                  Burnout alerts — {wellnessAlerts.length} staff at risk
+                </h3>
+                <Link href="/wellness" className="text-xs font-medium text-rose-700 hover:text-rose-900">
+                  Manage all →
+                </Link>
+              </div>
+              <div className="space-y-2">
+                {wellnessAlerts.slice(0, 3).map((alert, i) => (
+                  <div key={alert.userId || alert.staffId || i} className="flex items-center justify-between rounded-lg border border-rose-200 bg-white px-3 py-2">
+                    <div>
+                      <p className="text-sm font-medium text-slate-800">{alert.staff}</p>
+                      <p className="text-xs text-slate-500">{alert.department} · +{alert.overtime}hr overtime</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded px-2 py-0.5 text-xs font-medium ${alert.risk === "high" ? "bg-rose-100 text-rose-700" : "bg-amber-100 text-amber-700"}`}>
+                        {alert.risk} risk
+                      </span>
+                      {alert.staffId && (
+                        <Link href={scheduleStaffPath(alert.staffId, alert.staff)} className="text-xs text-teal-600 hover:text-teal-700">
+                          Schedule →
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {wellnessAlerts.length > 3 && (
+                  <p className="pt-1 text-xs text-rose-700">
+                    +{wellnessAlerts.length - 3} more —{" "}
+                    <Link href="/wellness" className="underline">view all</Link>
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Staffing shortages */}
+          {staffingShortages.length > 0 && (
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-5 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="flex items-center gap-2 font-semibold text-amber-900">
+                  <AlertTriangle className="h-4 w-4" />
+                  Staffing gaps — {staffingShortages.length} detected
+                </h3>
+                <Link href="/scheduling" className="text-xs font-medium text-amber-700 hover:text-amber-900">
+                  Open scheduling →
+                </Link>
+              </div>
+              <div className="space-y-2">
+                {staffingShortages.slice(0, 4).map((s, i) => (
+                  <div key={i} className="flex items-start gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2">
+                    <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+                    <div>
+                      <p className="text-sm font-medium text-slate-800">{s.department ?? "Dept"}</p>
+                      <p className="text-xs text-slate-500">{s.message ?? "Shortage detected"}</p>
+                    </div>
+                  </div>
+                ))}
+                {staffingShortages.length > 4 && (
+                  <p className="pt-1 text-xs text-amber-700">
+                    +{staffingShortages.length - 4} more gaps —{" "}
+                    <Link href="/scheduling" className="underline">view scheduling</Link>
+                  </p>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Schedule coverage quick stat — shown inline when no shortages */}
+      {!loading && staffingShortages.length === 0 && coveragePercent != null && (
+        <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 px-5 py-3">
+          <div className="rounded-lg bg-emerald-100 p-2">
+            <TrendingUp className="h-4 w-4 text-emerald-600" />
+          </div>
+          <p className="text-sm font-medium text-emerald-800">
+            Schedule coverage: <strong>{Math.round(coveragePercent)}%</strong> — no staffing shortages detected
+          </p>
+          <Link href="/scheduling" className="ml-auto text-xs text-emerald-700 hover:text-emerald-900">
+            View schedule →
+          </Link>
+        </div>
+      )}
+
       {(showWorkload || showWellness) && (
         <div className={`grid gap-6 ${showWorkload && showWellness ? "lg:grid-cols-2" : "lg:grid-cols-1"}`}>
           {showWorkload && (
@@ -577,138 +735,37 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {(showWorkload || showWellness) && (
-        <div
-          className={`grid gap-6 ${
-            showWorkload && showWellness ? "lg:grid-cols-3" : "lg:grid-cols-1"
-          }`}
+      {showWorkload && (
+        <ChartPanel
+          title="Workload trend"
+          subtitle="Solid = actual history. Dashed = ML forecast."
+          action={
+            <Link href="/ai-prediction" className="text-xs font-medium text-teal-600 hover:text-teal-700">
+              AI Prediction →
+            </Link>
+          }
         >
-          {showWorkload && (
-            <ChartPanel
-              className={showWellness ? "lg:col-span-2" : undefined}
-              title="Workload trend"
-              subtitle="Solid = actual history. Dashed = ML forecast."
-              action={
-                <Link href="/ai-prediction" className="text-xs font-medium text-teal-600 hover:text-teal-700">
-                  AI Prediction →
-                </Link>
-              }
-            >
-              {loading ? (
-                <ChartSkeleton className="h-64" />
-              ) : workloadTrend.length === 0 ? (
-                <EmptyChart message="Not enough monthly history for a trend line." />
-              ) : (
-                <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={workloadTrend} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                      <XAxis dataKey="month" tick={{ fontSize: 11 }} />
-                      <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} width={42} />
-                      <Tooltip content={<WorkloadTooltip />} />
-                      <Legend />
-                      <ReferenceLine y={alertThreshold} stroke="#fca5a5" strokeDasharray="3 3" />
-                      <Line
-                        type="monotone"
-                        dataKey="actual"
-                        stroke="#0f766e"
-                        strokeWidth={2.5}
-                        dot={{ fill: "#0f766e", r: 4 }}
-                        connectNulls
-                        name="Actual workload"
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="predicted"
-                        stroke="#64748b"
-                        strokeWidth={2}
-                        strokeDasharray="6 4"
-                        dot={{ fill: "#64748b", r: 3 }}
-                        name="Predicted (ML)"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </ChartPanel>
+          {loading ? (
+            <ChartSkeleton className="h-64" />
+          ) : workloadTrend.length === 0 ? (
+            <EmptyChart message="Not enough monthly history for a trend line." />
+          ) : (
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={workloadTrend} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                  <XAxis dataKey="month" tick={{ fontSize: 11 }} />
+                  <YAxis domain={[0, 100]} unit="%" tick={{ fontSize: 11 }} width={42} />
+                  <Tooltip content={<WorkloadTooltip />} />
+                  <Legend />
+                  <ReferenceLine y={alertThreshold} stroke="#fca5a5" strokeDasharray="3 3" />
+                  <Line type="monotone" dataKey="actual" stroke="#0f766e" strokeWidth={2.5} dot={{ fill: "#0f766e", r: 4 }} connectNulls name="Actual workload" />
+                  <Line type="monotone" dataKey="predicted" stroke="#64748b" strokeWidth={2} strokeDasharray="6 4" dot={{ fill: "#64748b", r: 3 }} name="Predicted (ML)" />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           )}
-
-          {showWellness && (
-            <ChartPanel
-              title="Wellness alerts"
-              subtitle="Staff at elevated burnout risk — open scheduling to rebalance shifts."
-              action={
-                <Link href="/wellness" className="text-xs font-medium text-teal-600 hover:text-teal-700">
-                  All alerts →
-                </Link>
-              }
-            >
-              {loading ? (
-                <div className="space-y-2">
-                  <ChartSkeleton className="h-16" />
-                  <ChartSkeleton className="h-16" />
-                </div>
-              ) : wellnessAlerts.length === 0 ? (
-                <p className="flex items-center gap-2 text-sm text-emerald-700">
-                  <TrendingUp className="h-4 w-4" /> No wellness alerts right now.
-                </p>
-              ) : (
-                <div
-                  className={`space-y-3 overflow-y-auto ${weekShiftsStaffId ? "max-h-[28rem]" : "max-h-64"}`}
-                >
-                  {wellnessAlerts.map((alert, i) => (
-                    <div key={alert.userId || alert.staffId || i} className="rounded-lg border border-slate-200 p-3">
-                      <p className="font-medium text-slate-800">{alert.staff}</p>
-                      {alert.email && <p className="text-xs text-teal-600">{alert.email}</p>}
-                      <p className="text-sm text-slate-500">{alert.department}</p>
-                      <div className="mt-2 flex flex-wrap items-center gap-2">
-                        <span
-                          className={`rounded px-2 py-0.5 text-xs font-medium ${
-                            alert.risk === "high"
-                              ? "bg-rose-100 text-rose-700"
-                              : "bg-amber-100 text-amber-700"
-                          }`}
-                        >
-                          {alert.risk} risk
-                        </span>
-                        <span className="text-xs text-slate-500">+{alert.overtime}hr overtime (7d)</span>
-                      </div>
-                      {alert.staffId && (
-                        <div className="mt-2 flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setWeekShiftsStaffId(
-                                weekShiftsStaffId === alert.staffId ? null : alert.staffId ?? null
-                              )
-                            }
-                            className="text-xs font-medium text-slate-700 hover:text-slate-900"
-                          >
-                            {weekShiftsStaffId === alert.staffId ? "Hide shifts" : "This week's shifts"}
-                          </button>
-                          <Link
-                            href={scheduleStaffPath(alert.staffId, alert.staff)}
-                            className="text-xs font-medium text-teal-600 hover:text-teal-700"
-                          >
-                            Open scheduling
-                          </Link>
-                        </div>
-                      )}
-                      {alert.staffId && (
-                        <StaffWeekShiftsPanel
-                          staffId={alert.staffId}
-                          staffName={alert.staff}
-                          expanded={weekShiftsStaffId === alert.staffId}
-                          compact
-                        />
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </ChartPanel>
-          )}
-        </div>
+        </ChartPanel>
       )}
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -779,35 +836,23 @@ export default function DashboardPage() {
           )}
         </ChartPanel>
 
-        <ChartPanel title="Schedule coverage" subtitle="Shift fill rate and detected staffing gaps.">
+        <ChartPanel title="Schedule coverage" subtitle="Shift fill rate vs required slots.">
           {loading ? (
             <ChartSkeleton className="h-48" />
           ) : (
             <>
-              {coveragePercent != null ? (
-                <p className="text-3xl font-bold text-teal-700">{Math.round(coveragePercent)}%</p>
-              ) : (
-                <p className="text-2xl font-bold text-slate-400">—</p>
-              )}
+              <p className={`text-3xl font-bold ${coveragePercent != null && coveragePercent < 80 ? "text-amber-600" : "text-teal-700"}`}>
+                {coveragePercent != null ? `${Math.round(coveragePercent)}%` : "—"}
+              </p>
               <p className="mt-1 text-xs text-slate-500">Scheduled shifts vs required slots</p>
               {summary?.balanceScore != null && (
                 <p className="mt-2 text-sm text-slate-600">
                   Balance score: <strong>{summary.balanceScore}/100</strong>
                 </p>
               )}
-              <ul className="mt-3 max-h-24 space-y-1 overflow-y-auto text-xs text-slate-600">
-                {staffingShortages.length === 0 && (
-                  <li className="text-emerald-700">No staffing shortages detected</li>
-                )}
-                {staffingShortages.slice(0, 5).map((s, i) => (
-                  <li key={i} className="flex gap-1">
-                    <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0 text-amber-500" />
-                    <span>
-                      {s.department ?? "Dept"}: {s.message ?? "Shortage"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <Link href="/scheduling" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-teal-600 hover:text-teal-700">
+                Open scheduling →
+              </Link>
             </>
           )}
         </ChartPanel>

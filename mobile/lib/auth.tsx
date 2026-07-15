@@ -96,7 +96,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refreshSession().finally(() => setReady(true));
+    // Always clear session on app start — require fresh login every time
+    clearSession().then(() => {
+      setUser(null);
+      setReady(true);
+    });
   }, [refreshSession]);
 
   useEffect(() => {
