@@ -32,7 +32,7 @@ Use the bundled scripts to start everything, open ngrok tunnels, and launch the 
 ```bash
 # One-time: install ngrok and add your authtoken
 brew install ngrok                        # or https://ngrok.com/download
-ngrok config add-authtoken <YOUR_TOKEN>   # from https://dashboard.ngrok.com
+ngrok config add-authtoken <YOUR.\run-remote.ps1 -Profile prod _TOKEN>   # from https://dashboard.ngrok.com
 
 ./run-remote.sh                           # dev profile (default)
 ./run-remote.sh --profile prod            # compiled backend jar + next start
@@ -46,7 +46,7 @@ winget install ngrok.ngrok
 ngrok config add-authtoken <YOUR_TOKEN>
 
 .\run-remote.ps1                          # dev profile (default)
-.\run-remote.ps1 -Profile prod            # compiled backend jar + next start
+           # compiled backend jar + next start
 .\run-remote.ps1 -Prod -NoMobile          # prod, web + backend only
 ```
 

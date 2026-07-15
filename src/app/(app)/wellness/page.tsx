@@ -228,8 +228,11 @@ export default function WellnessPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-2xl font-bold text-slate-800">Staff Wellness & Burnout Prevention</h2>
-        <p className="text-slate-600">Monitor wellness indicators, assign interventions, and prevent burnout</p>
+        <h2 className="flex items-center gap-2 text-2xl font-bold text-slate-800">
+          <Heart className="h-7 w-7 text-rose-500" />
+          Staff Wellness & Burnout Prevention
+        </h2>
+        <p className="mt-1 text-slate-600">Monitor wellness indicators, assign interventions, and prevent burnout</p>
         {statusMessage && <p className="mt-2 text-sm text-emerald-600">{statusMessage}</p>}
         <div
           className={`mt-3 rounded-lg border px-3 py-2 text-sm ${
@@ -280,10 +283,10 @@ export default function WellnessPage() {
       )}
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <KpiCard icon={AlertTriangle} color="rose" label="At-Risk Staff" value={String(atRiskCount)} />
-        <KpiCard icon={TrendingUp} color="amber" label="Avg Overtime (hrs)" value={String(avgOvertime)} />
-        <KpiCard icon={Heart} color="emerald" label="Wellness Score" value={`${avgScore}/100`} />
-        <KpiCard icon={ClipboardList} color="teal" label="Survey Response Rate" value={`${surveyResponseRate}%`} />
+        <KpiCard icon={AlertTriangle} color="rose" label="At-Risk Staff" value={String(atRiskCount)} sub="Elevated burnout risk" />
+        <KpiCard icon={TrendingUp} color="amber" label="Avg Overtime (hrs)" value={String(avgOvertime)} sub="Last 7 days per staff" />
+        <KpiCard icon={Heart} color="emerald" label="Wellness Score" value={`${avgScore}/100`} sub={trendLabel ? `Trend: ${trendLabel}` : "Overall average"} />
+        <KpiCard icon={ClipboardList} color="teal" label="Survey Response Rate" value={`${surveyResponseRate}%`} sub="Staff check-ins" />
       </div>
 
       {trendLabel && (
@@ -501,7 +504,11 @@ export default function WellnessPage() {
               <ListSearchBar value={feedbackSearch} onChange={setFeedbackSearch} placeholder="Search message, sentiment, themes…" className="sm:max-w-xs" />
             </div>
             {filteredFeedback.length === 0 ? (
-              <p className="text-sm text-slate-500">No feedback submitted yet.</p>
+              <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/60 py-10 text-center">
+                <MessageSquare className="mb-3 h-8 w-8 text-slate-300" />
+                <p className="font-medium text-slate-600">No feedback submitted yet</p>
+                <p className="mt-1 text-sm text-slate-400">Staff can submit anonymous feedback using the form below.</p>
+              </div>
             ) : (
               <>
                 <div className="space-y-2">
@@ -550,11 +557,13 @@ function KpiCard({
   color,
   label,
   value,
+  sub,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   color: "rose" | "amber" | "emerald" | "teal";
   label: string;
   value: string;
+  sub?: string;
 }) {
   const colors = {
     rose: "bg-rose-100 text-rose-600",
@@ -563,14 +572,15 @@ function KpiCard({
     teal: "bg-teal-100 text-teal-600",
   };
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-      <div className="flex items-center gap-3">
+    <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex items-start gap-3">
         <div className={`rounded-lg p-2 ${colors[color]}`}>
           <Icon className="h-5 w-5" />
         </div>
         <div>
-          <p className="text-sm text-slate-500">{label}</p>
-          <p className="text-2xl font-bold text-slate-800">{value}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
+          <p className="mt-1 text-2xl font-bold text-slate-800">{value}</p>
+          {sub && <p className="mt-0.5 text-xs text-slate-400">{sub}</p>}
         </div>
       </div>
     </div>
@@ -806,7 +816,11 @@ function InterventionsPanel({
   if (interventions.length === 0) {
     return (
       <div>
-        <p className="text-sm text-slate-500">No interventions yet.</p>
+        <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/60 py-10 text-center">
+          <ClipboardList className="mb-3 h-8 w-8 text-slate-300" />
+          <p className="font-medium text-slate-600">No interventions yet</p>
+          <p className="mt-1 text-sm text-slate-400">Assign an intervention from a burnout alert above, or add a template below.</p>
+        </div>
         {manageSettings && (
           <div className="mt-3 flex gap-2">
             <select
@@ -958,7 +972,7 @@ function RecordsAdminPanel({
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>
-                <tr className="border-b border-slate-200 text-slate-500">
+                <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                   <th className="py-2 pr-4">Staff</th>
                   <th className="py-2 pr-4">Date</th>
                   <th className="py-2 pr-4">Risk</th>
@@ -969,7 +983,7 @@ function RecordsAdminPanel({
               </thead>
               <tbody>
                 {recordsPagination.paginatedItems.map((r) => (
-                  <tr key={r.id} className="border-b border-slate-100">
+                  <tr key={r.id} className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
                     <td className="py-2 pr-4">{r.staffName ?? r.staffId}</td>
                     <td className="py-2 pr-4">{r.date ?? "—"}</td>
                     <td className="py-2 pr-4">{r.riskLevel}</td>

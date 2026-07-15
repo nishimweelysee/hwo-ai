@@ -1,12 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { apiFetch, apiDownload } from "@/lib/api";
-import { FileText, Download, Calendar, BarChart3, Layout, Target, FileCheck } from "lucide-react";
+import { apiFetch } from "@/lib/api";
+import { FileText, Download, Calendar, BarChart3, Layout, Target, FileCheck, ClipboardList, TrendingUp, Heart } from "lucide-react";
 
 const reportTypes = [
   { id: "operational", icon: FileText, label: "Operational Report", desc: "Weekly workload summary" },
   { id: "strategic", icon: BarChart3, label: "Strategic Report", desc: "Quarterly workforce planning" },
+  { id: "wellness", icon: Heart, label: "Wellness Report", desc: "Staff burnout, interventions & feedback" },
   { id: "compliance", icon: Calendar, label: "Compliance Report", desc: "Regulatory requirements" },
 ];
 
@@ -14,6 +15,8 @@ const customSections = [
   { id: "departments", label: "Departments", desc: "Department list with staff and workload" },
   { id: "staff", label: "Staff", desc: "Staff roster with roles" },
   { id: "workload", label: "Workload", desc: "Workload records by date" },
+  { id: "wellness", label: "Wellness", desc: "Burnout risk, interventions and feedback" },
+  { id: "scheduling", label: "Scheduling", desc: "Shifts, coverage and conflicts" },
 ];
 
 export default function ReportingPage() {
@@ -60,10 +63,61 @@ export default function ReportingPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h2 className="text-2xl font-bold text-slate-800">Reporting & Analytics</h2>
-        <p className="text-slate-600">
-          Generate operational, strategic, and compliance reports
+        <h2 className="flex items-center gap-2 text-2xl font-bold text-slate-800">
+          <FileText className="h-7 w-7 text-teal-600" />
+          Reporting & Analytics
+        </h2>
+        <p className="mt-1 text-slate-600">
+          Generate, schedule, and export operational, strategic, and wellness reports
         </p>
+      </div>
+
+      {/* KPI summary cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg bg-teal-100 p-2"><ClipboardList className="h-5 w-5 text-teal-600" /></div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Reports generated</p>
+              <p className="mt-1 text-2xl font-bold text-slate-800">{reports.length}</p>
+              <p className="mt-1 text-xs text-slate-400">Last 20 on record</p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg bg-indigo-100 p-2"><Calendar className="h-5 w-5 text-indigo-600" /></div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Scheduled reports</p>
+              <p className="mt-1 text-2xl font-bold text-slate-800">—</p>
+              <p className="mt-1 text-xs text-slate-400">See section below</p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className="rounded-lg bg-amber-100 p-2"><TrendingUp className="h-5 w-5 text-amber-600" /></div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Depts benchmarked</p>
+              <p className="mt-1 text-2xl font-bold text-slate-800">{benchmarks.length}</p>
+              <p className="mt-1 text-xs text-slate-400">vs workload target</p>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex items-start gap-3">
+            <div className={`rounded-lg p-2 ${benchmarks.filter(b => b.status !== "compliant").length > 0 ? "bg-rose-100" : "bg-emerald-100"}`}>
+              <Heart className={`h-5 w-5 ${benchmarks.filter(b => b.status !== "compliant").length > 0 ? "text-rose-600" : "text-emerald-600"}`} />
+            </div>
+            <div>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Depts above target</p>
+              <p className={`mt-1 text-2xl font-bold ${benchmarks.filter(b => b.status !== "compliant").length > 0 ? "text-rose-700" : "text-slate-800"}`}>
+                {benchmarks.filter(b => b.status !== "compliant").length}
+              </p>
+              <p className="mt-1 text-xs text-slate-400">Workload exceeding limit</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
@@ -231,7 +285,11 @@ export default function ReportingPage() {
         <h3 className="mb-4 font-semibold text-slate-800">Recent Reports</h3>
         <div className="space-y-3">
           {reports.length === 0 ? (
-            <p className="text-sm text-slate-500">No reports generated yet. Generate one above.</p>
+            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/60 py-12 text-center">
+              <FileText className="mb-3 h-10 w-10 text-slate-300" />
+              <p className="font-medium text-slate-600">No reports generated yet</p>
+              <p className="mt-1 text-sm text-slate-400">Use the report cards above to generate and download your first report.</p>
+            </div>
           ) : (
             reports.map((r) => (
               <div
@@ -280,6 +338,7 @@ function ScheduledReportsList() {
           <select value={newReport.type} onChange={(e) => setNewReport((n) => ({ ...n, type: e.target.value }))} className="rounded border px-2 py-1 text-sm">
             <option value="operational">Operational</option>
             <option value="strategic">Strategic</option>
+            <option value="wellness">Wellness</option>
             <option value="compliance">Compliance</option>
           </select>
           <select value={newReport.format} onChange={(e) => setNewReport((n) => ({ ...n, format: e.target.value }))} className="rounded border px-2 py-1 text-sm">

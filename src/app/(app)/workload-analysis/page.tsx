@@ -544,7 +544,7 @@ export default function WorkloadAnalysisPage() {
               </thead>
               <tbody>
                 {ratios.byDepartment.map((row) => (
-                  <tr key={row.department} className="border-b border-slate-100">
+                  <tr key={row.department} className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
                     <td className="py-2.5 pr-4 font-medium text-slate-800">{row.department}</td>
                     <td className="py-2.5 pr-4 text-slate-600">{row.staffCount ?? "—"}</td>
                     <td className="py-2.5 pr-4 text-slate-600">{row.avgPatientVolume ?? "—"}</td>
@@ -778,7 +778,7 @@ function StaffDrillDown() {
               </thead>
               <tbody>
                 {staffPagination.paginatedItems.map((s, i) => (
-                  <tr key={s.id ?? `${s.name}-${i}`} className="border-b border-slate-100">
+                  <tr key={s.id ?? `${s.name}-${i}`} className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
                     <td className="py-2.5 pr-4 font-medium text-slate-800">{s.name}</td>
                     <td className="py-2.5 pr-4 text-slate-600">{s.role}</td>
                     <td className="py-2.5 pr-4 text-slate-600">{s.department.name}</td>

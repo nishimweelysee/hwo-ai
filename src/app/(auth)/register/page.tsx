@@ -11,13 +11,7 @@ export default function RegisterPage() {
   const router = useRouter();
   const { register } = useAuth();
   const [config, setConfig] = useState<RegistrationConfig | null>(null);
-  const [form, setForm] = useState({
-    name: "",
-    email: "",
-    password: "",
-    role: "",
-    departmentId: "",
-  });
+  const [form, setForm] = useState({ name: "", email: "", password: "", role: "", departmentId: "" });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -26,173 +20,157 @@ export default function RegisterPage() {
       setConfig(c);
       if (c) {
         const roles = activeUserRoles(c);
-        setForm((f) => ({
-          ...f,
-          role: defaultRoleName(roles, c.userRoles?.defaultRole) || roles[0]?.name || "",
-        }));
+        setForm((f) => ({ ...f, role: defaultRoleName(roles, c.userRoles?.defaultRole) || roles[0]?.name || "" }));
       }
     });
   }, []);
 
   const roles = activeUserRoles(config);
-  const orgName = config?.organization?.name || "";
+  const orgName = config?.organization?.name || "Health Workforce Optimizer";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    // Client-side password strength check
+    if (form.password.length < 8) { setError("Password must be at least 8 characters"); return; }
+    if (!/[A-Z]/.test(form.password)) { setError("Password must contain at least one uppercase letter"); return; }
+    if (!/[0-9]/.test(form.password)) { setError("Password must contain at least one number"); return; }
+
     setLoading(true);
     try {
-      const ok = await register({
-        name: form.name,
-        email: form.email,
-        password: form.password,
-        role: form.role,
-        departmentId: form.departmentId || undefined,
-      });
+      const ok = await register({ name: form.name, email: form.email, password: form.password, role: form.role, departmentId: form.departmentId || undefined });
       if (ok) {
-        router.push("/dashboard");
-        router.refresh();
-      } else {
-        setError("Registration failed");
-      }
-    } catch {
-      setError("Registration failed");
-    }
+        // Redirect to verify-email so new users verify their account
+        router.push(`/verify-email?email=${encodeURIComponent(form.email)}&new=1`);
+      } else setError("Registration failed. Please try again.");
+    } catch { setError("Registration failed."); }
     setLoading(false);
   };
 
+  const inputCls = "w-full rounded-lg border border-slate-600 bg-slate-700/50 px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500";
+
   return (
-    <div className="rounded-2xl border border-slate-700/50 bg-slate-800/80 p-8 shadow-2xl backdrop-blur">
-      <div className="mb-8 flex items-center justify-center gap-3">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-teal-500 text-white">
-          <BarChart3 className="h-7 w-7" />
+    <div className="rounded-2xl border border-slate-700/50 bg-slate-800/80 p-6 shadow-2xl backdrop-blur">
+      {/* Header */}
+      <div className="mb-4 flex items-center justify-center gap-2">
+        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-500">
+          <BarChart3 className="h-5 w-5 text-white" aria-hidden="true" />
         </div>
         <div>
-          <h1 className="text-xl font-bold text-white">Create Account</h1>
-          <p className="text-sm text-slate-400">
-            {orgName ? orgName : "Health Workforce Optimizer"}
-          </p>
+          <h1 className="text-base font-bold text-white">Create Account</h1>
+          <p className="text-xs text-slate-400">{orgName}</p>
         </div>
       </div>
+
+      {/* Error */}
       {error && (
-        <div className="mb-4 rounded-lg bg-rose-500/20 p-3 text-sm text-rose-300">
+        <div role="alert" className="mb-3 rounded-lg bg-rose-500/20 px-3 py-2 text-xs text-rose-300">
           {error}
         </div>
       )}
-      <form onSubmit={handleSubmit} className="space-y-5">
+
+      <form onSubmit={handleSubmit} className="space-y-3" noValidate>
+        {/* Two-column: Name + Email */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="name" className="mb-1 block text-xs font-medium text-slate-300">Full Name</label>
+            <input
+              id="name" type="text" value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="Dr. Jane Smith" className={inputCls}
+              required aria-required="true" autoComplete="name"
+            />
+          </div>
+          <div>
+            <label htmlFor="email" className="mb-1 block text-xs font-medium text-slate-300">Email</label>
+            <input
+              id="email" type="email" value={form.email}
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              placeholder="jane@hospital.org" className={inputCls}
+              required aria-required="true" autoComplete="email"
+            />
+          </div>
+        </div>
+
+        {/* Two-column: Role + Department */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label htmlFor="role" className="mb-1 block text-xs font-medium text-slate-300">Role</label>
+            <select
+              id="role" value={form.role}
+              onChange={(e) => setForm({ ...form, role: e.target.value })}
+              className={inputCls} required aria-required="true"
+            >
+              {roles.length === 0 && <option value="">Loading…</option>}
+              {roles.map((r) => (
+                <option key={r.name} value={r.name} className="bg-slate-800">{r.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label htmlFor="department" className="mb-1 block text-xs font-medium text-slate-300">
+              Department <span className="text-slate-500">(optional)</span>
+            </label>
+            <select
+              id="department" value={form.departmentId}
+              onChange={(e) => setForm({ ...form, departmentId: e.target.value })}
+              className={inputCls}
+            >
+              <option value="" className="bg-slate-800">Select…</option>
+              {(config?.departments || []).map((d) => (
+                <option key={d.id} value={d.id} className="bg-slate-800">
+                  {d.name}{d.code ? ` (${d.code})` : ""}
+                </option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Organisation (read-only) */}
         <div>
-          <label className="mb-2 block text-sm font-medium text-slate-300">
-            Full Name
-          </label>
+          <label htmlFor="org" className="mb-1 block text-xs font-medium text-slate-300">Organisation</label>
           <input
-            type="text"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            placeholder="Dr. Jane Smith"
-            className="w-full rounded-lg border border-slate-600 bg-slate-700/50 px-4 py-3 text-white placeholder-slate-500 focus:border-teal-500 focus:outline-none"
-            required
+            id="org" type="text" value={orgName} readOnly
+            className="w-full cursor-not-allowed rounded-lg border border-slate-600 bg-slate-800/80 px-3 py-2 text-sm text-slate-400"
+            aria-readonly="true"
           />
         </div>
+
+        {/* Password */}
         <div>
-          <label className="mb-2 block text-sm font-medium text-slate-300">
-            Email
-          </label>
+          <label htmlFor="password" className="mb-1 block text-xs font-medium text-slate-300">Password</label>
           <input
-            type="email"
-            value={form.email}
-            onChange={(e) => setForm({ ...form, email: e.target.value })}
-            placeholder="jane@hospital.org"
-            className="w-full rounded-lg border border-slate-600 bg-slate-700/50 px-4 py-3 text-white placeholder-slate-500 focus:border-teal-500 focus:outline-none"
-            required
+            id="password" type="password" value={form.password}
+            onChange={(e) => setForm({ ...form, password: e.target.value })}
+            placeholder="Min. 8 chars, 1 uppercase, 1 number" minLength={8}
+            className={inputCls} required aria-required="true" autoComplete="new-password"
           />
-        </div>
-        <div>
-          <label className="mb-2 block text-sm font-medium text-slate-300">
-            Role
-          </label>
-          <select
-            value={form.role}
-            onChange={(e) => setForm({ ...form, role: e.target.value })}
-            className="w-full rounded-lg border border-slate-600 bg-slate-700/50 px-4 py-3 text-white focus:border-teal-500 focus:outline-none"
-            required
-          >
-            {roles.length === 0 && <option value="">Loading roles…</option>}
-            {roles.map((r) => (
-              <option key={r.name} value={r.name} className="bg-slate-800">
-                {r.name}
-              </option>
-            ))}
-          </select>
-          {roles.find((r) => r.name === form.role)?.description && (
-            <p className="mt-1 text-xs text-slate-500">
-              {roles.find((r) => r.name === form.role)?.description}
-            </p>
+          {/* Strength indicators */}
+          {form.password.length > 0 && (
+            <div className="mt-1.5 flex gap-1.5 text-xs">
+              <span className={form.password.length >= 8 ? "text-emerald-400" : "text-slate-500"}>✓ 8+ chars</span>
+              <span className={/[A-Z]/.test(form.password) ? "text-emerald-400" : "text-slate-500"}>✓ Uppercase</span>
+              <span className={/[0-9]/.test(form.password) ? "text-emerald-400" : "text-slate-500"}>✓ Number</span>
+            </div>
           )}
         </div>
-        <div>
-          <label className="mb-2 block text-sm font-medium text-slate-300">
-            Organization
-          </label>
-          <input
-            type="text"
-            value={orgName}
-            readOnly
-            className="w-full cursor-not-allowed rounded-lg border border-slate-600 bg-slate-800/80 px-4 py-3 text-slate-300"
-          />
-          <p className="mt-1 text-xs text-slate-500">
-            Set in Configuration → Organization. New accounts are assigned to this organization.
-          </p>
-        </div>
-        <div>
-          <label className="mb-2 block text-sm font-medium text-slate-300">
-            Department (optional)
-          </label>
-          <select
-            value={form.departmentId}
-            onChange={(e) => setForm({ ...form, departmentId: e.target.value })}
-            className="w-full rounded-lg border border-slate-600 bg-slate-700/50 px-4 py-3 text-white focus:border-teal-500 focus:outline-none"
-          >
-            <option value="" className="bg-slate-800">Select department</option>
-            {(config?.departments || []).map((d) => (
-              <option key={d.id} value={d.id} className="bg-slate-800">
-                {d.name}{d.code ? ` (${d.code})` : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="mb-2 block text-sm font-medium text-slate-300">
-            Password
-          </label>
-          <input
-            type="password"
-            value={form.password}
-            onChange={(e) => setForm({ ...form, password: e.target.value })}
-            placeholder="••••••••"
-            minLength={8}
-            className="w-full rounded-lg border border-slate-600 bg-slate-700/50 px-4 py-3 text-white placeholder-slate-500 focus:border-teal-500 focus:outline-none"
-            required
-          />
-          <p className="mt-1 text-xs text-slate-500">Minimum 8 characters</p>
-        </div>
+
+        {/* Submit */}
         <button
           type="submit"
           disabled={loading || !form.role}
-          className="w-full rounded-lg bg-teal-500 py-3 font-semibold text-white transition-colors hover:bg-teal-600 disabled:opacity-50"
+          className="w-full rounded-lg bg-teal-500 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 focus:ring-offset-slate-800 disabled:opacity-50"
         >
-          {loading ? "Creating account..." : "Register"}
+          {loading ? "Creating account…" : "Register"}
         </button>
       </form>
-      <p className="mt-6 text-center text-sm text-slate-500">
+
+      <p className="mt-3 text-center text-xs text-slate-500">
         Already have an account?{" "}
-        <a href="/login" className="text-teal-400 hover:text-teal-300">
-          Sign in
-        </a>
-      </p>
-      <p className="mt-2 text-center text-xs text-slate-500">
-        <a href="/verify-email" className="text-teal-400 hover:text-teal-300">
-          Verify your email
-        </a>
+        <a href="/login" className="text-teal-400 hover:text-teal-300 focus:outline-none focus:underline">Sign in</a>
+        {" · "}
+        <a href="/verify-email" className="text-teal-400 hover:text-teal-300 focus:outline-none focus:underline">Verify email</a>
       </p>
     </div>
   );

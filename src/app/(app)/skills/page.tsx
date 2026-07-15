@@ -491,8 +491,11 @@ export default function SkillsPage() {
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">Skills & Competency Management</h2>
-          <p className="text-slate-600">Certifications, competency gaps, training priorities, and development planning</p>
+          <h2 className="flex items-center gap-2 text-2xl font-bold text-slate-800">
+            <Award className="h-7 w-7 text-teal-600" />
+            Skills & Competency Management
+          </h2>
+          <p className="mt-1 text-slate-600">Certifications, competency gaps, training priorities, and development planning</p>
         </div>
         <button
           type="button"
@@ -653,7 +656,7 @@ export default function SkillsPage() {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[900px] text-sm">
                 <thead>
-                  <tr className="border-b border-slate-200 text-left text-slate-600">
+                  <tr className="border-b border-slate-200 text-left text-xs font-semibold uppercase tracking-wider text-slate-500">
                     <th className="pb-3 pr-3">Certification</th>
                     <th className="pb-3 pr-3">Staff</th>
                     <th className="pb-3 pr-3">Department</th>
@@ -664,7 +667,7 @@ export default function SkillsPage() {
                 </thead>
                 <tbody>
                   {certPagination.paginatedItems.map((c) => (
-                    <tr key={c.id} className="border-b border-slate-100">
+                    <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
                       <td className="py-3 pr-3 font-medium text-slate-800">{c.certName}</td>
                       <td className="py-3 pr-3">{c.staffName}</td>
                       <td className="py-3 pr-3 text-slate-600">{c.department || "—"}</td>
@@ -705,7 +708,11 @@ export default function SkillsPage() {
             <h3 className="font-semibold text-slate-800">Skills Matrix by Department</h3>
           </div>
           {data.skillMatrix.length === 0 ? (
-            <p className="text-sm text-slate-500">No competency data yet — add certifications to staff.</p>
+            <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/60 py-12 text-center">
+              <Grid3X3 className="mb-3 h-10 w-10 text-slate-300" />
+              <p className="font-medium text-slate-600">No competency data yet</p>
+              <p className="mt-1 text-sm text-slate-400">Add certifications to staff members to populate the matrix.</p>
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -720,7 +727,7 @@ export default function SkillsPage() {
                 </thead>
                 <tbody>
                   {data.skillMatrix.map((row, i) => (
-                    <tr key={i} className="border-b border-slate-100">
+                    <tr key={i} className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
                       <td className="py-2 font-medium text-slate-800">{row.skill}</td>
                       {matrixDepts.map((d) => (
                         <td key={d} className="py-2 text-center">
@@ -760,7 +767,7 @@ export default function SkillsPage() {
                   </thead>
                   <tbody>
                     {trainingRows.map((t, i) => (
-                      <tr key={t.id ?? i} className="border-b border-slate-100">
+                      <tr key={t.id ?? i} className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
                         {skillsAiActive && <td className="py-2 pr-3 text-slate-500">#{t.rank ?? i + 1}</td>}
                         <td className="py-2 pr-3 font-medium">{t.certification}</td>
                         <td className="py-2 pr-3">{t.staffCount}</td>
@@ -798,7 +805,11 @@ export default function SkillsPage() {
               )}
             </div>
             {data.developmentPrograms.length === 0 ? (
-              <p className="text-sm text-slate-500">No development programs yet. Add one or seed via Configuration → Skills.</p>
+              <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/60 py-10 text-center">
+                <GraduationCap className="mb-3 h-10 w-10 text-slate-300" />
+                <p className="font-medium text-slate-600">No development programs yet</p>
+                <p className="mt-1 text-sm text-slate-400">Add a program below or seed via Configuration → Skills.</p>
+              </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-2">
                 {data.developmentPrograms.map((p) => (
@@ -905,8 +916,8 @@ export default function SkillsPage() {
               <TextField label="Description" value={programForm.description} onChange={(v) => setProgramForm({ ...programForm, description: v })} />
             </div>
             <div className="mt-6 flex justify-end gap-2">
-              <button type="button" onClick={() => setShowProgramForm(false)} className="rounded-lg border px-4 py-2 text-sm">Cancel</button>
-              <button type="button" disabled={saving} onClick={saveProgram} className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50">
+              <button type="button" onClick={() => setShowProgramForm(false)} className="btn-secondary">Cancel</button>
+              <button type="button" disabled={saving} onClick={saveProgram} className="btn-primary disabled:opacity-50">
                 {saving ? "Saving…" : "Save"}
               </button>
             </div>
@@ -939,8 +950,8 @@ export default function SkillsPage() {
               <TextField label="Notes" value={certForm.notes} onChange={(v) => setCertForm({ ...certForm, notes: v })} />
             </div>
             <div className="mt-6 flex justify-end gap-2">
-              <button type="button" onClick={() => setShowCertForm(false)} className="rounded-lg border px-4 py-2 text-sm">Cancel</button>
-              <button type="button" disabled={saving || certCatalogOptions.length === 0} onClick={saveCert} className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:opacity-50">
+              <button type="button" onClick={() => setShowCertForm(false)} className="btn-secondary">Cancel</button>
+              <button type="button" disabled={saving || certCatalogOptions.length === 0} onClick={saveCert} className="btn-primary disabled:opacity-50">
                 {saving ? "Saving…" : "Save"}
               </button>
             </div>
