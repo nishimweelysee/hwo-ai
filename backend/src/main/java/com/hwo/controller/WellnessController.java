@@ -2,10 +2,10 @@ package com.hwo.controller;
 
 import com.hwo.service.CurrentUserService;
 import com.hwo.service.WellnessService;
+import com.hwo.web.PageResponses;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -85,8 +85,23 @@ public class WellnessController {
     }
 
     @GetMapping("/feedback")
-    public ResponseEntity<List<Map<String, Object>>> listFeedback() {
-        return ResponseEntity.ok(wellnessService.listFeedback());
+    public ResponseEntity<Map<String, Object>> listFeedback(
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize) {
+        return ResponseEntity.ok(PageResponses.of(
+            wellnessService.listFeedback(),
+            page,
+            pageSize,
+            search,
+            row -> String.join(" ",
+                String.valueOf(row.getOrDefault("message", "")),
+                String.valueOf(row.getOrDefault("sentiment", "")),
+                String.valueOf(row.getOrDefault("urgency", "")),
+                String.valueOf(row.getOrDefault("rating", "")),
+                String.valueOf(row.getOrDefault("createdAt", "")),
+                String.valueOf(row.getOrDefault("themes", "")))
+        ));
     }
 
     @DeleteMapping("/feedback/{id}")
@@ -96,9 +111,25 @@ public class WellnessController {
     }
 
     @GetMapping("/records")
-    public ResponseEntity<List<Map<String, Object>>> listRecords(
-            @RequestParam(required = false) String staffId) {
-        return ResponseEntity.ok(wellnessService.listRecords(staffId));
+    public ResponseEntity<Map<String, Object>> listRecords(
+            @RequestParam(required = false) String staffId,
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize) {
+        return ResponseEntity.ok(PageResponses.of(
+            wellnessService.listRecords(staffId),
+            page,
+            pageSize,
+            search,
+            row -> String.join(" ",
+                String.valueOf(row.getOrDefault("staffName", "")),
+                String.valueOf(row.getOrDefault("staffId", "")),
+                String.valueOf(row.getOrDefault("department", "")),
+                String.valueOf(row.getOrDefault("date", "")),
+                String.valueOf(row.getOrDefault("riskLevel", "")),
+                String.valueOf(row.getOrDefault("overtime", "")),
+                String.valueOf(row.getOrDefault("score", "")))
+        ));
     }
 
     @GetMapping("/records/{id}")
@@ -124,9 +155,24 @@ public class WellnessController {
     }
 
     @GetMapping("/interventions")
-    public ResponseEntity<List<Map<String, Object>>> listInterventions(
-            @RequestParam(required = false) String staffId) {
-        return ResponseEntity.ok(wellnessService.listInterventions(staffId));
+    public ResponseEntity<Map<String, Object>> listInterventions(
+            @RequestParam(required = false) String staffId,
+            @RequestParam(required = false) String search,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize) {
+        return ResponseEntity.ok(PageResponses.of(
+            wellnessService.listInterventions(staffId),
+            page,
+            pageSize,
+            search,
+            row -> String.join(" ",
+                String.valueOf(row.getOrDefault("staffName", "")),
+                String.valueOf(row.getOrDefault("staffId", "")),
+                String.valueOf(row.getOrDefault("type", "")),
+                String.valueOf(row.getOrDefault("title", "")),
+                String.valueOf(row.getOrDefault("status", "")),
+                String.valueOf(row.getOrDefault("description", "")))
+        ));
     }
 
     @PostMapping("/interventions")

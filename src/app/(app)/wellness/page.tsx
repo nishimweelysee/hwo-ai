@@ -5,13 +5,9 @@ import Link from "next/link";
 import { apiFetch } from "@/lib/api";
 import { scheduleStaffPath } from "@/lib/scheduling-links";
 import { usePermissions } from "@/hooks/use-permissions";
-import {
-  filterWellnessAlerts,
-  filterWellnessRecords,
-  staffToSearchableOptions,
-  type StaffLike,
-} from "@/lib/searchable-options";
+import { filterWellnessAlerts } from "@/lib/searchable-options";
 import { SearchableSelect } from "@/components/searchable-select";
+import { fetchStaffOptionsPage } from "@/lib/staff-options";
 import { ListSearchBar } from "@/components/list-search-bar";
 import { StaffWeekShiftsPanel } from "@/components/staff-week-shifts-panel";
 import { usePagination } from "@/hooks/use-pagination";
@@ -96,14 +92,17 @@ export default function WellnessPage() {
   const [surveyResponseRate, setSurveyResponseRate] = useState(0);
   const [aiWellnessActive, setAiWellnessActive] = useState(false);
   const [modelInfo, setModelInfo] = useState<Record<string, unknown> | null>(null);
-  const [interventions, setInterventions] = useState<Intervention[]>([]);
-  const [records, setRecords] = useState<WellnessRecord[]>([]);
-  const [feedback, setFeedback] = useState<FeedbackItem[]>([]);
   const [selectedStaffId, setSelectedStaffId] = useState<string | null>(null);
   const [weekShiftsStaffId, setWeekShiftsStaffId] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState("");
   const [alertSearch, setAlertSearch] = useState("");
   const [feedbackSearch, setFeedbackSearch] = useState("");
+  const [feedbackPage, setFeedbackPage] = useState(1);
+  const [feedbackPageSize, setFeedbackPageSize] = useState(10);
+  const [feedback, setFeedback] = useState<FeedbackItem[]>([]);
+  const [feedbackTotalItems, setFeedbackTotalItems] = useState(0);
+  const [feedbackTotalPages, setFeedbackTotalPages] = useState(1);
+  const [listsNonce, setListsNonce] = useState(0);
 
   const loadData = useCallback(() => {
     apiFetch("/api/wellness/meta")
@@ -144,22 +143,35 @@ export default function WellnessPage() {
           setTrendLabel(data.trendLabel ?? "");
         }
       });
-    apiFetch("/api/wellness/interventions")
-      .then((r) => (r.ok ? r.json() : []))
-      .then(setInterventions);
-    if (manageSettings) {
-      apiFetch("/api/wellness/records")
-        .then((r) => (r.ok ? r.json() : []))
-        .then(setRecords);
-      apiFetch("/api/wellness/feedback")
-        .then((r) => (r.ok ? r.json() : []))
-        .then(setFeedback);
-    }
-  }, [manageSettings]);
+    setListsNonce((n) => n + 1);
+  }, []);
+
+  const loadFeedbackPage = useCallback(async () => {
+    if (!manageSettings) return;
+    const params = new URLSearchParams({
+      page: String(feedbackPage),
+      pageSize: String(feedbackPageSize),
+    });
+    if (feedbackSearch.trim()) params.set("search", feedbackSearch.trim());
+    const res = await apiFetch(`/api/wellness/feedback?${params}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setFeedback(Array.isArray(data.items) ? data.items : []);
+    setFeedbackTotalItems(Number(data.totalItems ?? 0));
+    setFeedbackTotalPages(Number(data.totalPages ?? 1));
+  }, [manageSettings, feedbackPage, feedbackPageSize, feedbackSearch]);
 
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  useEffect(() => {
+    setFeedbackPage(1);
+  }, [feedbackSearch]);
+
+  useEffect(() => {
+    void loadFeedbackPage();
+  }, [loadFeedbackPage, listsNonce]);
 
   const assignIntervention = async (alert: Alert, type: string) => {
     if (!alert.staffId) return;
@@ -198,32 +210,6 @@ export default function WellnessPage() {
 
   const filteredAlerts = useMemo(() => filterWellnessAlerts(alerts, alertSearch), [alerts, alertSearch]);
   const alertsPagination = usePagination(filteredAlerts, 8, alertSearch);
-
-  const filteredFeedback = useMemo(() => {
-    const q = feedbackSearch.trim().toLowerCase();
-    if (!q) return feedback;
-    return feedback.filter((item) => {
-      const haystack = [
-        item.id,
-        item.message,
-        item.sentiment,
-        item.urgency,
-        item.rating != null ? String(item.rating) : "",
-        item.createdAt,
-        ...(item.themes ?? []),
-        item.anonymous ? "anonymous" : "",
-      ]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      return q.split(/\s+/).every((token) => haystack.includes(token));
-    });
-  }, [feedback, feedbackSearch]);
-  const feedbackPagination = usePagination(filteredFeedback, 10, feedbackSearch);
-
-  const filteredInterventions = selectedStaffId
-    ? interventions.filter((i) => i.staffId === selectedStaffId)
-    : interventions;
 
   return (
     <div className="space-y-8">
@@ -461,12 +447,13 @@ export default function WellnessPage() {
           {selectedStaffId ? "Interventions for selected staff" : "Recommended interventions"}
         </h3>
         <InterventionsPanel
-          interventions={filteredInterventions}
+          selectedStaffId={selectedStaffId}
           manageSettings={manageSettings}
           interventionTypes={interventionTypes}
           onComplete={completeIntervention}
           onDelete={deleteIntervention}
           onRefresh={loadData}
+          refreshKey={listsNonce}
         />
       </div>
 
@@ -493,7 +480,7 @@ export default function WellnessPage() {
               <ClipboardList className="h-5 w-5 text-slate-600" />
               <h3 className="font-semibold text-slate-800">Wellness Records (Admin)</h3>
             </div>
-            <RecordsAdminPanel records={records} onDelete={deleteRecord} onRefresh={loadData} />
+            <RecordsAdminPanel onDelete={deleteRecord} onRefresh={loadData} refreshKey={listsNonce} />
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -503,7 +490,7 @@ export default function WellnessPage() {
               </div>
               <ListSearchBar value={feedbackSearch} onChange={setFeedbackSearch} placeholder="Search message, sentiment, themes…" className="sm:max-w-xs" />
             </div>
-            {filteredFeedback.length === 0 ? (
+            {feedback.length === 0 ? (
               <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/60 py-10 text-center">
                 <MessageSquare className="mb-3 h-8 w-8 text-slate-300" />
                 <p className="font-medium text-slate-600">No feedback submitted yet</p>
@@ -512,7 +499,7 @@ export default function WellnessPage() {
             ) : (
               <>
                 <div className="space-y-2">
-                  {feedbackPagination.paginatedItems.map((item) => (
+                  {feedback.map((item) => (
                     <div key={item.id} className="flex items-start justify-between rounded-lg border border-slate-100 p-3 text-sm">
                       <div>
                         <p className="text-slate-800">{item.message || "(no message)"}</p>
@@ -526,7 +513,10 @@ export default function WellnessPage() {
                       </div>
                       <button
                         type="button"
-                        onClick={() => deleteFeedbackItem(item.id)}
+                        onClick={async () => {
+                          await deleteFeedbackItem(item.id);
+                          void loadFeedbackPage();
+                        }}
                         className="text-xs text-rose-600 hover:text-rose-700"
                       >
                         Delete
@@ -536,12 +526,15 @@ export default function WellnessPage() {
                 </div>
                 <Pagination
                   className="mt-4"
-                  page={feedbackPagination.page}
-                  pageSize={feedbackPagination.pageSize}
-                  totalItems={feedbackPagination.totalItems}
-                  totalPages={feedbackPagination.totalPages}
-                  onPageChange={feedbackPagination.setPage}
-                  onPageSizeChange={feedbackPagination.setPageSize}
+                  page={feedbackPage}
+                  pageSize={feedbackPageSize}
+                  totalItems={feedbackTotalItems}
+                  totalPages={feedbackTotalPages}
+                  onPageChange={setFeedbackPage}
+                  onPageSizeChange={(size) => {
+                    setFeedbackPageSize(size);
+                    setFeedbackPage(1);
+                  }}
                 />
               </>
             )}
@@ -782,21 +775,29 @@ function AnonymousFeedback({ onSubmitted }: { onSubmitted: () => void }) {
 }
 
 function InterventionsPanel({
-  interventions,
+  selectedStaffId,
   manageSettings,
   interventionTypes,
   onComplete,
   onDelete,
   onRefresh,
+  refreshKey,
 }: {
-  interventions: Intervention[];
+  selectedStaffId: string | null;
   manageSettings: boolean;
   interventionTypes: string[];
   onComplete: (id: string) => void;
   onDelete: (id: string) => void;
   onRefresh: () => void;
+  refreshKey: number;
 }) {
   const [newType, setNewType] = useState(interventionTypes[0] ?? "Wellness check-in");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [items, setItems] = useState<Intervention[]>([]);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
 
   useEffect(() => {
     if (interventionTypes.length > 0 && !interventionTypes.includes(newType)) {
@@ -804,18 +805,44 @@ function InterventionsPanel({
     }
   }, [interventionTypes, newType]);
 
+  useEffect(() => {
+    setPage(1);
+  }, [search, selectedStaffId]);
+
+  const loadItems = useCallback(async () => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (selectedStaffId) params.set("staffId", selectedStaffId);
+    if (search.trim()) params.set("search", search.trim());
+    const res = await apiFetch(`/api/wellness/interventions?${params}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setItems(Array.isArray(data.items) ? data.items : []);
+    setTotalItems(Number(data.totalItems ?? 0));
+    setTotalPages(Number(data.totalPages ?? 1));
+  }, [page, pageSize, selectedStaffId, search]);
+
+  useEffect(() => {
+    void loadItems();
+  }, [loadItems, refreshKey]);
+
   const createTemplate = async () => {
     const res = await apiFetch("/api/wellness/interventions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: newType, status: "planned" }),
     });
-    if (res.ok) onRefresh();
+    if (res.ok) {
+      onRefresh();
+      void loadItems();
+    }
   };
 
-  if (interventions.length === 0) {
+  if (items.length === 0) {
     return (
       <div>
+        <div className="mb-3">
+          <ListSearchBar value={search} onChange={setSearch} placeholder="Search interventions…" className="sm:max-w-xs" />
+        </div>
         <div className="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/60 py-10 text-center">
           <ClipboardList className="mb-3 h-8 w-8 text-slate-300" />
           <p className="font-medium text-slate-600">No interventions yet</p>
@@ -843,7 +870,11 @@ function InterventionsPanel({
 
   return (
     <div className="space-y-2">
-      {interventions.map((i) => (
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-slate-600">{totalItems} intervention{totalItems === 1 ? "" : "s"}</p>
+        <ListSearchBar value={search} onChange={setSearch} placeholder="Search interventions…" className="sm:max-w-xs" />
+      </div>
+      {items.map((i) => (
         <div key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-100 p-3 text-sm">
           <div>
             <p className="font-medium text-slate-800">{i.title}</p>
@@ -854,18 +885,44 @@ function InterventionsPanel({
           </div>
           <div className="flex gap-2">
             {i.status !== "completed" && (
-              <button type="button" onClick={() => onComplete(i.id)} className="text-xs text-teal-600 hover:text-teal-700">
+              <button
+                type="button"
+                onClick={async () => {
+                  await onComplete(i.id);
+                  void loadItems();
+                }}
+                className="text-xs text-teal-600 hover:text-teal-700"
+              >
                 Mark complete
               </button>
             )}
             {manageSettings && (
-              <button type="button" onClick={() => onDelete(i.id)} className="text-xs text-rose-600 hover:text-rose-700">
+              <button
+                type="button"
+                onClick={async () => {
+                  await onDelete(i.id);
+                  void loadItems();
+                }}
+                className="text-xs text-rose-600 hover:text-rose-700"
+              >
                 Delete
               </button>
             )}
           </div>
         </div>
       ))}
+      <Pagination
+        className="mt-3"
+        page={page}
+        pageSize={pageSize}
+        totalItems={totalItems}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        onPageSizeChange={(size) => {
+          setPageSize(size);
+          setPage(1);
+        }}
+      />
       {manageSettings && (
         <div className="mt-3 flex gap-2">
           <select
@@ -887,30 +944,48 @@ function InterventionsPanel({
 }
 
 function RecordsAdminPanel({
-  records,
   onDelete,
   onRefresh,
+  refreshKey,
 }: {
-  records: WellnessRecord[];
   onDelete: (id: string) => void;
   onRefresh: () => void;
+  refreshKey: number;
 }) {
-  const [staffList, setStaffList] = useState<StaffLike[]>([]);
   const [staffId, setStaffId] = useState("");
   const [overtime, setOvertime] = useState(0);
   const [riskLevel, setRiskLevel] = useState("low");
   const [score, setScore] = useState(80);
   const [recordSearch, setRecordSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [rows, setRows] = useState<WellnessRecord[]>([]);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+
+  const loadStaffOptions = useCallback(
+    (args: { search: string; page: number; pageSize: number }) => fetchStaffOptionsPage(args),
+    []
+  );
+
+  const loadRecords = useCallback(async () => {
+    const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+    if (recordSearch.trim()) params.set("search", recordSearch.trim());
+    const res = await apiFetch(`/api/wellness/records?${params}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    setRows((Array.isArray(data.items) ? data.items : []) as WellnessRecord[]);
+    setTotalItems(Number(data.totalItems ?? 0));
+    setTotalPages(Number(data.totalPages ?? 1));
+  }, [page, pageSize, recordSearch]);
 
   useEffect(() => {
-    apiFetch("/api/staff?limit=500")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((rows: StaffLike[]) => setStaffList(Array.isArray(rows) ? rows : []));
-  }, []);
+    void loadRecords();
+  }, [loadRecords, refreshKey]);
 
-  const staffOptions = useMemo(() => staffToSearchableOptions(staffList), [staffList]);
-  const filteredRecords = useMemo(() => filterWellnessRecords(records, recordSearch), [records, recordSearch]);
-  const recordsPagination = usePagination(filteredRecords, 10, recordSearch);
+  useEffect(() => {
+    setPage(1);
+  }, [recordSearch]);
 
   const createRecord = async () => {
     if (!staffId.trim()) return;
@@ -922,6 +997,7 @@ function RecordsAdminPanel({
     if (res.ok) {
       setStaffId("");
       onRefresh();
+      void loadRecords();
     }
   };
 
@@ -931,9 +1007,11 @@ function RecordsAdminPanel({
         <SearchableSelect
           label="Staff"
           value={staffId}
-          options={staffOptions}
           onChange={setStaffId}
-          placeholder="Select staff"
+          loadOptions={loadStaffOptions}
+          placeholder="Search staff…"
+          pageSize={10}
+          emptyMessage="No matching staff"
         />
         <label className="block">
           <span className="text-sm font-medium text-slate-700">Overtime (hours)</span>
@@ -962,10 +1040,10 @@ function RecordsAdminPanel({
         </button>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-slate-600">{filteredRecords.length} record{filteredRecords.length === 1 ? "" : "s"}</p>
+        <p className="text-sm text-slate-600">{totalItems} record{totalItems === 1 ? "" : "s"}</p>
         <ListSearchBar value={recordSearch} onChange={setRecordSearch} placeholder="Search staff, date, risk, score…" className="sm:max-w-xs" />
       </div>
-      {filteredRecords.length === 0 ? (
+      {rows.length === 0 ? (
         <p className="text-sm text-slate-500">No wellness records.</p>
       ) : (
         <>
@@ -982,7 +1060,7 @@ function RecordsAdminPanel({
                 </tr>
               </thead>
               <tbody>
-                {recordsPagination.paginatedItems.map((r) => (
+                {rows.map((r) => (
                   <tr key={r.id} className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
                     <td className="py-2 pr-4">{r.staffName ?? r.staffId}</td>
                     <td className="py-2 pr-4">{r.date ?? "—"}</td>
@@ -990,7 +1068,14 @@ function RecordsAdminPanel({
                     <td className="py-2 pr-4">+{r.overtime}h</td>
                     <td className="py-2 pr-4">{r.score ?? "—"}</td>
                     <td className="py-2">
-                      <button type="button" onClick={() => onDelete(r.id)} className="text-xs text-rose-600">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          await onDelete(r.id);
+                          void loadRecords();
+                        }}
+                        className="text-xs text-rose-600"
+                      >
                         Delete
                       </button>
                     </td>
@@ -1001,12 +1086,15 @@ function RecordsAdminPanel({
           </div>
           <Pagination
             className="mt-4"
-            page={recordsPagination.page}
-            pageSize={recordsPagination.pageSize}
-            totalItems={recordsPagination.totalItems}
-            totalPages={recordsPagination.totalPages}
-            onPageChange={recordsPagination.setPage}
-            onPageSizeChange={recordsPagination.setPageSize}
+            page={page}
+            pageSize={pageSize}
+            totalItems={totalItems}
+            totalPages={totalPages}
+            onPageChange={setPage}
+            onPageSizeChange={(size) => {
+              setPageSize(size);
+              setPage(1);
+            }}
           />
         </>
       )}

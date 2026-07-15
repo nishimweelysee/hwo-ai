@@ -10,6 +10,7 @@ import { usePagination } from "@/hooks/use-pagination";
 import { Pagination } from "@/components/pagination";
 import { SearchableSelect } from "@/components/searchable-select";
 import { staffToSearchableOptions, filterStaffPreferences, buildSearchText } from "@/lib/searchable-options";
+import { fetchStaffOptionsPage } from "@/lib/staff-options";
 import { ListSearchBar } from "@/components/list-search-bar";
 import { useAuth } from "@/lib/auth-context";
 import {
@@ -288,7 +289,7 @@ export default function SchedulingPage() {
   const loadStaffOptions = useCallback(async (departmentId?: string, search?: string) => {
     setStaffOptionsLoading(true);
     try {
-      const params = new URLSearchParams({ limit: "300" });
+      const params = new URLSearchParams({ page: "1", pageSize: "10" });
       if (departmentId) params.set("departmentId", departmentId);
       if (search?.trim()) params.set("search", search.trim());
       const res = await apiFetch(`/api/staff/options?${params}`);
@@ -315,6 +316,17 @@ export default function SchedulingPage() {
       setStaffOptionsLoading(false);
     }
   }, []);
+
+  const loadShiftStaffOptions = useCallback(
+    (args: { search: string; page: number; pageSize: number }) =>
+      fetchStaffOptionsPage({ ...args, departmentId: shiftForm.departmentId || undefined }),
+    [shiftForm.departmentId]
+  );
+
+  const loadAllStaffOptions = useCallback(
+    (args: { search: string; page: number; pageSize: number }) => fetchStaffOptionsPage(args),
+    []
+  );
 
   const loadData = useCallback(async (date: string) => {
     setOverviewLoading(true);
@@ -1569,7 +1581,8 @@ export default function SchedulingPage() {
               <SearchableSelect
                 inline
                 value={shiftForm.staffId}
-                options={shiftStaffOptions}
+                loadOptions={loadShiftStaffOptions}
+                pageSize={10}
                 onChange={(staffId) => setShiftForm((f) => ({ ...f, staffId }))}
                 placeholder="Select staff"
               />
@@ -2124,7 +2137,8 @@ export default function SchedulingPage() {
                 <SearchableSelect
                   inline
                   value={leaveForm.staffId}
-                  options={allStaffOptions}
+                  loadOptions={loadAllStaffOptions}
+                  pageSize={10}
                   onChange={(staffId) => setLeaveForm((f) => ({ ...f, staffId }))}
                   placeholder="Select staff"
                 />
@@ -2267,7 +2281,8 @@ export default function SchedulingPage() {
                 <SearchableSelect
                   inline
                   value={onCallForm.staffId}
-                  options={allStaffOptions}
+                  loadOptions={loadAllStaffOptions}
+                  pageSize={10}
                   onChange={(staffId) => setOnCallForm((f) => ({ ...f, staffId }))}
                   placeholder="Select staff"
                 />

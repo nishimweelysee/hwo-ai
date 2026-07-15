@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, Search } from "lucide-react";
 import {
   filterSearchableOptions,
@@ -8,10 +8,16 @@ import {
   type SearchableOption,
 } from "@/lib/searchable-options";
 
+export type LoadOptionsResult = {
+  options: SearchableOption[];
+  totalItems: number;
+  totalPages: number;
+};
+
 type SearchableSelectProps = {
   label?: string;
   value: string;
-  options: SearchableOption[];
+  options?: SearchableOption[];
   onChange: (value: string) => void;
   placeholder?: string;
   hint?: string;
@@ -21,48 +27,122 @@ type SearchableSelectProps = {
   emptyMessage?: string;
   /** Compact trigger without block label wrapper */
   inline?: boolean;
+  /**
+   * When set, options are loaded from the server with search + pagination
+   * instead of filtering a local `options` array.
+   */
+  loadOptions?: (args: {
+    search: string;
+    page: number;
+    pageSize: number;
+  }) => Promise<LoadOptionsResult>;
+  /** Optional label/subtitle for the currently selected value (remote mode). */
+  selectedOption?: SearchableOption | null;
 };
 
 export function SearchableSelect({
   label,
   value,
-  options,
+  options = [],
   onChange,
   placeholder = "Select…",
   hint,
   disabled = false,
   className = "",
-  pageSize = 8,
+  pageSize = 10,
   emptyMessage = "No matches",
   inline = false,
+  loadOptions,
+  selectedOption: selectedOptionProp,
 }: SearchableSelectProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [remoteOptions, setRemoteOptions] = useState<SearchableOption[]>([]);
+  const [totalItems, setTotalItems] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [selectedCache, setSelectedCache] = useState<SearchableOption | null>(null);
+  const requestIdRef = useRef(0);
 
-  const selected = options.find((o) => o.value === value);
+  const isRemote = Boolean(loadOptions);
 
-  const filtered = useMemo(
+  useEffect(() => {
+    if (!isRemote) return;
+    const t = window.setTimeout(() => setDebouncedSearch(search), 250);
+    return () => window.clearTimeout(t);
+  }, [search, isRemote]);
+
+  const fetchRemote = useCallback(async () => {
+    if (!loadOptions) return;
+    const reqId = ++requestIdRef.current;
+    setLoading(true);
+    try {
+      const result = await loadOptions({
+        search: debouncedSearch,
+        page,
+        pageSize,
+      });
+      if (reqId !== requestIdRef.current) return;
+      setRemoteOptions(result.options);
+      setTotalItems(result.totalItems);
+      setTotalPages(Math.max(1, result.totalPages));
+    } catch {
+      if (reqId !== requestIdRef.current) return;
+      setRemoteOptions([]);
+      setTotalItems(0);
+      setTotalPages(1);
+    } finally {
+      if (reqId === requestIdRef.current) setLoading(false);
+    }
+  }, [loadOptions, debouncedSearch, page, pageSize]);
+
+  useEffect(() => {
+    if (!isRemote) return;
+    setPage(1);
+  }, [debouncedSearch, isRemote]);
+
+  useEffect(() => {
+    if (!open || !isRemote) return;
+    void fetchRemote();
+  }, [open, isRemote, fetchRemote]);
+
+  const localFiltered = useMemo(
     () => filterSearchableOptions(options, search),
     [options, search]
   );
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const localTotalPages = Math.max(1, Math.ceil(localFiltered.length / pageSize));
 
   useEffect(() => {
+    if (isRemote) return;
     setPage(1);
-  }, [search, options.length]);
+  }, [search, options.length, isRemote]);
 
   useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
+    if (isRemote) {
+      if (page > totalPages) setPage(totalPages);
+    } else if (page > localTotalPages) {
+      setPage(localTotalPages);
+    }
+  }, [page, totalPages, localTotalPages, isRemote]);
 
-  const pageItems = useMemo(
-    () => paginateItems(filtered, page, pageSize),
-    [filtered, page, pageSize]
-  );
+  const pageItems = useMemo(() => {
+    if (isRemote) return remoteOptions;
+    return paginateItems(localFiltered, page, pageSize);
+  }, [isRemote, remoteOptions, localFiltered, page, pageSize]);
+
+  const resultCount = isRemote ? totalItems : localFiltered.length;
+  const pages = isRemote ? totalPages : localTotalPages;
+
+  const selected =
+    selectedOptionProp
+    ?? selectedCache
+    ?? (isRemote ? remoteOptions.find((o) => o.value === value) : undefined)
+    ?? options.find((o) => o.value === value);
 
   useEffect(() => {
     if (!open) return;
@@ -80,6 +160,7 @@ export function SearchableSelect({
       setTimeout(() => searchRef.current?.focus(), 0);
     } else {
       setSearch("");
+      setDebouncedSearch("");
       setPage(1);
     }
   }, [open]);
@@ -117,12 +198,12 @@ export function SearchableSelect({
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search name, email, role, department, ID…"
+            placeholder="Search name, email, role, department…"
             className="w-full rounded-md border border-slate-200 py-2 pl-8 pr-2 text-sm"
           />
         </div>
         <p className="mt-1 px-1 text-xs text-slate-500">
-          {filtered.length} result{filtered.length === 1 ? "" : "s"}
+          {loading ? "Loading…" : `${resultCount} result${resultCount === 1 ? "" : "s"}`}
         </p>
       </div>
       <ul className="max-h-56 overflow-y-auto py-1">
@@ -132,6 +213,7 @@ export function SearchableSelect({
               type="button"
               onClick={() => {
                 onChange("");
+                setSelectedCache(null);
                 setOpen(false);
               }}
               className={`w-full px-3 py-2 text-left text-sm hover:bg-slate-50 ${!value ? "bg-teal-50 text-teal-800" : "text-slate-500"}`}
@@ -141,7 +223,9 @@ export function SearchableSelect({
           </li>
         )}
         {pageItems.length === 0 ? (
-          <li className="px-3 py-4 text-center text-sm text-slate-500">{emptyMessage}</li>
+          <li className="px-3 py-4 text-center text-sm text-slate-500">
+            {loading ? "Loading…" : emptyMessage}
+          </li>
         ) : (
           pageItems.map((o) => (
             <li key={o.value}>
@@ -149,6 +233,7 @@ export function SearchableSelect({
                 type="button"
                 onClick={() => {
                   onChange(o.value);
+                  setSelectedCache(o);
                   setOpen(false);
                 }}
                 className={`w-full px-3 py-2 text-left text-sm hover:bg-slate-50 ${
@@ -162,23 +247,23 @@ export function SearchableSelect({
           ))
         )}
       </ul>
-      {filtered.length > pageSize && (
+      {resultCount > pageSize && (
         <div className="flex items-center justify-between border-t border-slate-100 px-2 py-1.5 text-xs text-slate-600">
           <button
             type="button"
-            disabled={page <= 1}
+            disabled={page <= 1 || loading}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             className="rounded px-2 py-1 hover:bg-slate-50 disabled:opacity-40"
           >
             Prev
           </button>
           <span>
-            Page {page} of {totalPages}
+            Page {page} of {pages}
           </span>
           <button
             type="button"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            disabled={page >= pages || loading}
+            onClick={() => setPage((p) => Math.min(pages, p + 1))}
             className="rounded px-2 py-1 hover:bg-slate-50 disabled:opacity-40"
           >
             Next

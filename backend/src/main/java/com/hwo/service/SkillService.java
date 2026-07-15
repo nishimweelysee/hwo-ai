@@ -99,17 +99,8 @@ public class SkillService {
     public Map<String, Object> getMeta() {
         Map<String, Object> meta = new LinkedHashMap<>();
         meta.put("statuses", CERT_STATUSES);
-        meta.put("staff", staffRepository.findAll().stream()
-            .map(s -> {
-                Map<String, Object> row = new LinkedHashMap<>();
-                row.put("id", s.getId());
-                row.put("name", s.getName());
-                row.put("email", s.getEmail());
-                row.put("role", s.getRole());
-                row.put("department", s.getDepartment() != null ? s.getDepartment().getName() : "");
-                return row;
-            })
-            .collect(Collectors.toList()));
+        // Staff for dropdowns: use GET /api/staff/options?page=&pageSize= (not findAll here).
+        meta.put("staff", List.of());
         meta.put("departments", departmentRepository.findAll().stream()
             .map(d -> Map.of("id", d.getId(), "name", d.getName()))
             .collect(Collectors.toList()));

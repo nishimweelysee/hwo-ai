@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { apiDownload, apiFetch, parseApiError } from "@/lib/api";
 import { TextField, SelectField, SearchableSelectField } from "@/components/form-fields";
-import { staffToSearchableOptions } from "@/lib/searchable-options";
+import { fetchStaffOptionsPage } from "@/lib/staff-options";
 import { usePagination } from "@/hooks/use-pagination";
 import { Pagination } from "@/components/pagination";
 
@@ -165,18 +165,9 @@ export default function SkillsPage() {
     () => (meta?.departments ?? []).map((d) => ({ value: d.id, label: d.name })),
     [meta]
   );
-  const staffOptions = useMemo(
-    () =>
-      staffToSearchableOptions(
-        (meta?.staff ?? []).map((s) => ({
-          id: s.id,
-          name: s.name,
-          email: s.email,
-          role: s.role,
-          department: s.department,
-        }))
-      ),
-    [meta]
+  const loadStaffOptions = useCallback(
+    (args: { search: string; page: number; pageSize: number }) => fetchStaffOptionsPage(args),
+    []
   );
   const matrixDepts = useMemo(() => {
     const fromMatrix = data.skillMatrix.flatMap((r) => Object.keys(r.counts || {}));
@@ -256,7 +247,7 @@ export default function SkillsPage() {
     setEditingCertId(null);
     setCertForm({
       ...EMPTY_CERT,
-      staffId: staffOptions[0]?.value ?? "",
+      staffId: "",
       name: certCatalogOptions[0]?.value ?? "",
     });
     setShowCertForm(true);
@@ -850,7 +841,7 @@ export default function SkillsPage() {
                         {enrollProgramId === p.id ? (
                           <div className="flex flex-wrap items-end gap-2">
                             <div className="min-w-[180px] flex-1">
-                              <SearchableSelectField label="Staff" value={enrollStaffId} options={staffOptions} onChange={setEnrollStaffId} placeholder="Select staff" />
+                              <SearchableSelectField label="Staff" value={enrollStaffId} loadOptions={loadStaffOptions} pageSize={10} onChange={setEnrollStaffId} placeholder="Select staff" />
                             </div>
                             <button type="button" disabled={saving} onClick={() => enrollInProgram(p.id)} className="rounded-lg bg-teal-600 px-3 py-2 text-sm text-white hover:bg-teal-700 disabled:opacity-50">
                               Enroll
@@ -860,7 +851,7 @@ export default function SkillsPage() {
                             </button>
                           </div>
                         ) : (
-                          <button type="button" onClick={() => { setEnrollProgramId(p.id); setEnrollStaffId(staffOptions[0]?.value ?? ""); }} className="text-sm font-medium text-teal-600 hover:text-teal-700">
+                          <button type="button" onClick={() => { setEnrollProgramId(p.id); setEnrollStaffId(""); }} className="text-sm font-medium text-teal-600 hover:text-teal-700">
                             Enroll staff
                           </button>
                         )}
@@ -879,7 +870,8 @@ export default function SkillsPage() {
                 <SearchableSelectField
                   label="Staff member"
                   value={devStaffId}
-                  options={staffOptions}
+                  loadOptions={loadStaffOptions}
+                  pageSize={10}
                   onChange={(v) => { setDevStaffId(v); loadStaffDevelopment(v); }}
                   placeholder="Select staff"
                 />
@@ -930,7 +922,7 @@ export default function SkillsPage() {
           <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
             <h3 className="mb-4 text-lg font-semibold">{editingCertId ? "Edit Certification" : "Add Certification"}</h3>
             <div className="space-y-3">
-              <SearchableSelectField label="Staff" value={certForm.staffId} options={staffOptions} onChange={(v) => setCertForm({ ...certForm, staffId: v })} placeholder="Select staff" />
+              <SearchableSelectField label="Staff" value={certForm.staffId} loadOptions={loadStaffOptions} pageSize={10} onChange={(v) => setCertForm({ ...certForm, staffId: v })} placeholder="Select staff" />
               {certCatalogOptions.length > 0 ? (
                 <SelectField
                   label="Certification"

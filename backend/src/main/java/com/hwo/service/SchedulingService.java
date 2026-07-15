@@ -102,7 +102,7 @@ public class SchedulingService {
         overview.put("schedules", schedules.stream().map(this::toScheduleDto).collect(Collectors.toList()));
         overview.put("summary", scheduleSummary(date, schedules));
         overview.put("conflicts", detectConflicts(date, schedules));
-        overview.put("leave", listLeave(300));
+        overview.put("leave", listLeave(50));
         overview.put("onCall", listOnCall(date));
         return overview;
     }

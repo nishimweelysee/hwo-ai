@@ -48,69 +48,91 @@ public class StaffController {
     }
 
     @GetMapping("/staff")
-    public ResponseEntity<?> getStaff(
+    public ResponseEntity<Map<String, Object>> getStaff(
             @RequestParam(required = false) String departmentId,
             @RequestParam(required = false) Boolean wellness,
             @RequestParam(required = false) String search,
-            @RequestParam(defaultValue = "500") int limit) {
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) Integer limit) {
+        int size = limit != null
+            ? Math.min(Math.max(limit, 1), 100)
+            : Math.min(Math.max(pageSize, 1), 100);
+        int pageIndex = Math.max(page, 1) - 1;
+        String q = search != null ? search.trim() : "";
+        String dept = departmentId != null && !departmentId.isBlank() ? departmentId : null;
+        var resultPage = staffRepository.searchOptionsPage(
+            dept,
+            q.isEmpty() ? null : q,
+            PageRequest.of(pageIndex, size, org.springframework.data.domain.Sort.by("name").ascending())
+        );
+        Map<String, String> departmentNames = departmentRepository.findAllOrderByName().stream()
+            .collect(Collectors.toMap(Department::getId, Department::getName, (a, b) -> a));
+
+        List<Map<String, Object>> items;
         if (Boolean.TRUE.equals(wellness)) {
-            int capped = Math.min(Math.max(limit, 1), 2000);
-            String q = search != null ? search.trim() : "";
-            List<Staff> staff = staffRepository.searchOptions(
-                departmentId != null && !departmentId.isBlank() ? departmentId : null,
-                q.isEmpty() ? null : q,
-                PageRequest.of(0, capped));
-            Map<String, String> departmentNames = departmentRepository.findAllOrderByName().stream()
-                .collect(Collectors.toMap(Department::getId, Department::getName, (a, b) -> a));
             Map<String, WellnessRecord> latestByStaff = wellnessRecordRepository.findLatestPerStaff().stream()
                 .collect(Collectors.toMap(WellnessRecord::getStaffId, r -> r, (a, b) -> a));
-            Set<String> staffIds = staff.stream().map(Staff::getId).collect(Collectors.toSet());
+            Set<String> staffIds = resultPage.getContent().stream().map(Staff::getId).collect(Collectors.toSet());
             Map<String, User> userByStaffId = staffIds.isEmpty()
                 ? Map.of()
                 : userRepository.findByStaffIdIn(staffIds).stream()
                     .filter(u -> u.getStaffId() != null)
                     .collect(Collectors.toMap(User::getStaffId, u -> u, (a, b) -> a));
-            return ResponseEntity.ok(staff.stream()
+            items = resultPage.getContent().stream()
                 .map(s -> toWellnessStaffDto(s, departmentNames, latestByStaff, userByStaffId))
-                .collect(Collectors.toList()));
-        }
-        List<Staff> staff;
-        if (departmentId != null) {
-            staff = staffRepository.findByDepartmentId(departmentId);
+                .collect(Collectors.toList());
         } else {
-            int capped = Math.min(Math.max(limit, 1), 2000);
-            staff = staffRepository.searchOptions(null, null, PageRequest.of(0, capped));
+            items = resultPage.getContent().stream()
+                .map(s -> toStaffDto(s, departmentNames))
+                .collect(Collectors.toList());
         }
-        Map<String, String> departmentNames = departmentRepository.findAllOrderByName().stream()
-            .collect(Collectors.toMap(Department::getId, Department::getName, (a, b) -> a));
-        return ResponseEntity.ok(staff.stream()
-            .map(s -> toStaffDto(s, departmentNames))
-            .collect(Collectors.toList()));
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("items", items);
+        body.put("page", pageIndex + 1);
+        body.put("pageSize", size);
+        body.put("totalItems", resultPage.getTotalElements());
+        body.put("totalPages", Math.max(1, resultPage.getTotalPages()));
+        return ResponseEntity.ok(body);
     }
 
     @GetMapping("/staff/options")
     public ResponseEntity<Map<String, Object>> staffOptions(
             @RequestParam(required = false) String search,
             @RequestParam(required = false) String departmentId,
-            @RequestParam(defaultValue = "200") int limit) {
-        int capped = Math.min(Math.max(limit, 1), 500);
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) Integer limit) {
+        // Prefer page/pageSize; keep `limit` for older callers (first page only).
+        int size = limit != null
+            ? Math.min(Math.max(limit, 1), 500)
+            : Math.min(Math.max(pageSize, 1), 100);
+        int pageIndex = Math.max(page, 1) - 1;
         String q = search != null ? search.trim() : "";
         Map<String, String> departmentNames = departmentRepository.findAllOrderByName().stream()
             .collect(Collectors.toMap(Department::getId, Department::getName, (a, b) -> a));
-        List<Map<String, Object>> options = staffRepository
-            .searchOptions(
-                departmentId != null && !departmentId.isBlank() ? departmentId : null,
-                q.isEmpty() ? null : q,
-                org.springframework.data.domain.PageRequest.of(0, capped)
+        var resultPage = staffRepository.searchOptionsPage(
+            departmentId != null && !departmentId.isBlank() ? departmentId : null,
+            q.isEmpty() ? null : q,
+            org.springframework.data.domain.PageRequest.of(
+                pageIndex,
+                size,
+                org.springframework.data.domain.Sort.by("name").ascending()
             )
-            .stream()
+        );
+        List<Map<String, Object>> options = resultPage.getContent().stream()
             .map(s -> toStaffDto(s, departmentNames))
             .collect(Collectors.toList());
-        return ResponseEntity.ok(Map.of(
-            "options", options,
-            "limit", capped,
-            "truncated", options.size() >= capped
-        ));
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("options", options);
+        body.put("page", pageIndex + 1);
+        body.put("pageSize", size);
+        body.put("totalItems", resultPage.getTotalElements());
+        body.put("totalPages", Math.max(1, resultPage.getTotalPages()));
+        body.put("limit", size);
+        body.put("truncated", resultPage.hasNext());
+        return ResponseEntity.ok(body);
     }
 
     @PostMapping("/staff")

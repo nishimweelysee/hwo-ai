@@ -39,9 +39,11 @@ public class WellnessService {
 
     private static final int STANDARD_WEEK_HOURS = 40;
     private static final long WELLNESS_REFRESH_COOLDOWN_MS = 5 * 60 * 1000L;
+    private static final long ENSURE_STAFF_USERS_COOLDOWN_MS = 60 * 1000L;
     private static final int DASHBOARD_ALERT_LIMIT = 25;
 
     private volatile long lastScheduleRefreshAtMs = 0L;
+    private volatile long lastEnsureStaffUsersAtMs = 0L;
 
     private final UserRepository userRepository;
     private final UserProfileRepository userProfileRepository;
@@ -85,10 +87,11 @@ public class WellnessService {
         this.pushNotificationService = pushNotificationService;
     }
 
-    /** Links a single staff member to a login in `users`. */
+    /** Links a single staff member to an active login in `users`. Generates email if missing. */
     @Transactional
     public void linkStaffUser(Staff staff) {
-        if (staff == null || staff.getEmail() == null || staff.getEmail().isBlank()) return;
+        if (staff == null) return;
+        ensureStaffHasEmail(staff);
         String email = normalizeEmail(staff.getEmail());
         if (!email.equals(staff.getEmail())) {
             staff.setEmail(email);
@@ -97,10 +100,20 @@ public class WellnessService {
         Optional<User> byStaff = userRepository.findByStaffId(staff.getId());
         if (byStaff.isPresent()) {
             User user = byStaff.get();
-            if (!email.equals(user.getEmail())) {
+            boolean dirty = false;
+            if (!email.equals(user.getEmail()) && userRepository.findByEmail(email).isEmpty()) {
                 user.setEmail(email);
-                userRepository.save(user);
+                dirty = true;
             }
+            if (!user.isActive()) {
+                user.setActive(true);
+                dirty = true;
+            }
+            if (user.getName() == null || user.getName().isBlank()) {
+                user.setName(staff.getName());
+                dirty = true;
+            }
+            if (dirty) userRepository.save(user);
             ensureProfileDepartment(user.getId(), staff.getDepartmentId());
             return;
         }
@@ -109,6 +122,7 @@ public class WellnessService {
             User user = existing.get();
             user.setStaffId(staff.getId());
             if (user.getName() == null || user.getName().isBlank()) user.setName(staff.getName());
+            user.setActive(true);
             userRepository.save(user);
             ensureProfileDepartment(user.getId(), staff.getDepartmentId());
             return;
@@ -180,54 +194,33 @@ public class WellnessService {
         return Map.of("success", true, "score", Math.round(score), "risk", risk, "riskLevel", risk);
     }
 
-    /** Links every workforce staff row to a login in `users` (by email). */
+    /** Links every workforce staff row to an active login in `users` (by email). */
     @Transactional
     public int ensureStaffUserAccounts() {
         int linked = 0;
         for (Staff staff : staffRepository.findAll()) {
-            if (staff.getEmail() == null || staff.getEmail().isBlank()) continue;
-            String email = normalizeEmail(staff.getEmail());
-            if (!email.equals(staff.getEmail())) {
-                staff.setEmail(email);
-                staffRepository.save(staff);
-            }
-            Optional<User> byStaff = userRepository.findByStaffId(staff.getId());
-            if (byStaff.isPresent()) {
-                User user = byStaff.get();
-                if (!email.equals(user.getEmail())) {
-                    user.setEmail(email);
-                    userRepository.save(user);
-                }
-                ensureProfileDepartment(user.getId(), staff.getDepartmentId());
-                continue;
-            }
-            Optional<User> existing = userRepository.findByEmail(email);
-            if (existing.isPresent()) {
-                User user = existing.get();
-                if (staff.getId().equals(user.getStaffId())) continue;
-                user.setStaffId(staff.getId());
-                if (user.getName() == null || user.getName().isBlank()) {
-                    user.setName(staff.getName());
-                }
-                userRepository.save(user);
-                ensureProfileDepartment(user.getId(), staff.getDepartmentId());
-                linked++;
-            } else {
-                User user = new User();
-                user.setId(UUID.randomUUID().toString());
-                user.setEmail(email);
-                user.setName(staff.getName());
-                user.setPassword(passwordEncoder.encode("staff123"));
-                user.setRole(settingsService.staffProvisionRole());
-                user.setOrganization(settingsService.getOrganizationName());
-                user.setActive(true);
-                user.setStaffId(staff.getId());
-                userRepository.save(user);
-                ensureProfileDepartment(user.getId(), staff.getDepartmentId());
+            boolean hadUser = userRepository.findByStaffId(staff.getId()).isPresent();
+            linkStaffUser(staff);
+            if (!hadUser && userRepository.findByStaffId(staff.getId()).isPresent()) {
                 linked++;
             }
         }
+        lastEnsureStaffUsersAtMs = System.currentTimeMillis();
         return linked;
+    }
+
+    /** Avoid re-linking every staff row on each dashboard/wellness page load. */
+    public void ensureStaffUserAccountsIfStale() {
+        long now = System.currentTimeMillis();
+        if (now - lastEnsureStaffUsersAtMs < ENSURE_STAFF_USERS_COOLDOWN_MS) {
+            return;
+        }
+        synchronized (this) {
+            if (now - lastEnsureStaffUsersAtMs < ENSURE_STAFF_USERS_COOLDOWN_MS) {
+                return;
+            }
+            ensureStaffUserAccounts();
+        }
     }
 
     /** Recompute overtime from schedule data when shifts exist; otherwise keep stored wellness rows. */
@@ -297,10 +290,12 @@ public class WellnessService {
 
     /** Lightweight wellness payload for dashboard — no per-alert AI enrichment. */
     public Map<String, Object> getDashboardWellness() {
+        ensureStaffUserAccountsIfStale();
         return buildWellnessSummary(false, false, DASHBOARD_ALERT_LIMIT);
     }
 
     public Map<String, Object> getWellnessSummary() {
+        ensureStaffUserAccountsIfStale();
         refreshWellnessFromSchedulesIfStale();
         // Skip per-alert AI enrichment on the list endpoint — each alert used to trigger
         // multiple AI/schedule round-trips. Use GET /api/wellness/ai/risk/{staffId} on demand.
@@ -309,12 +304,9 @@ public class WellnessService {
 
     private Map<String, Object> buildWellnessSummary(boolean includeStats, boolean enrichWithAi, int alertLimit) {
         int overtimeWarning = settingsService.getInt("workload", "overtimeWarningHours", 10);
-        List<User> users = userRepository.findByStaffIdIsNotNull().stream()
-            .filter(User::isActive)
-            .filter(u -> u.getStaffId() != null && !u.getStaffId().isBlank())
-            .toList();
+        List<WellnessRecord> latestRecords = wellnessRecordRepository.findLatestPerStaff();
 
-        if (users.isEmpty()) {
+        if (latestRecords.isEmpty()) {
             Map<String, Object> empty = new LinkedHashMap<>();
             empty.put("alertsEnabled", settingsService.getBoolean("notifications", "wellnessAlerts", true));
             empty.put("aiServiceHealthy", wellnessAiService.isActive());
@@ -328,12 +320,17 @@ public class WellnessService {
             return empty;
         }
 
-        Set<String> staffIds = users.stream().map(User::getStaffId).collect(Collectors.toSet());
+        Set<String> staffIds = latestRecords.stream()
+            .map(WellnessRecord::getStaffId)
+            .filter(id -> id != null && !id.isBlank())
+            .collect(Collectors.toSet());
         Map<String, Staff> staffById = staffRepository.findAllById(staffIds).stream()
             .collect(Collectors.toMap(Staff::getId, s -> s, (a, b) -> a));
-        Map<String, WellnessRecord> latestByStaff = wellnessRecordRepository.findLatestPerStaff().stream()
-            .filter(r -> staffIds.contains(r.getStaffId()))
-            .collect(Collectors.toMap(WellnessRecord::getStaffId, r -> r, (a, b) -> a));
+        Map<String, User> userByStaffId = staffIds.isEmpty()
+            ? Map.of()
+            : userRepository.findByStaffIdIn(staffIds).stream()
+                .filter(u -> u.getStaffId() != null)
+                .collect(Collectors.toMap(User::getStaffId, u -> u, (a, b) -> a));
         Map<String, String> departmentNames = departmentRepository.findAll().stream()
             .collect(Collectors.toMap(Department::getId, Department::getName, (a, b) -> a));
 
@@ -341,23 +338,27 @@ public class WellnessService {
         double totalOvertime = 0;
         int count = 0;
 
-        for (User user : users) {
-            Staff staff = staffById.get(user.getStaffId());
+        for (WellnessRecord record : latestRecords) {
+            Staff staff = staffById.get(record.getStaffId());
             if (staff == null) continue;
-
-            WellnessRecord record = latestByStaff.get(staff.getId());
-            if (record == null) continue;
 
             totalOvertime += record.getOvertime();
             count++;
 
-            if (isAtRisk(record, overtimeWarning)) {
-                Map<String, Object> alert = buildAlert(user, staff, record, departmentNames);
-                if (enrichWithAi && wellnessAiService.isActive()) {
-                    alert.putAll(wellnessAiService.enrichAlert(staff, record));
-                }
-                alerts.add(alert);
+            if (!isAtRisk(record, overtimeWarning)) continue;
+
+            User user = userByStaffId.get(staff.getId());
+            if (user == null || !user.isActive()) {
+                linkStaffUser(staff);
+                user = userRepository.findByStaffId(staff.getId()).orElse(null);
+                if (user != null) userByStaffId.put(staff.getId(), user);
             }
+
+            Map<String, Object> alert = buildAlert(user, staff, record, departmentNames);
+            if (enrichWithAi && wellnessAiService.isActive()) {
+                alert.putAll(wellnessAiService.enrichAlert(staff, record));
+            }
+            alerts.add(alert);
         }
 
         alerts.sort(Comparator
@@ -487,7 +488,9 @@ public class WellnessService {
     @Transactional
     public Map<String, Object> createRecord(Map<String, ?> body) {
         String staffId = String.valueOf(body.get("staffId"));
-        staffRepository.findById(staffId).orElseThrow(() -> new IllegalArgumentException("Staff not found"));
+        Staff staff = staffRepository.findById(staffId)
+            .orElseThrow(() -> new IllegalArgumentException("Staff not found"));
+        linkStaffUser(staff);
         double overtime = parseOvertimeAnswer(body.get("overtime"));
         int overtimeWarning = settingsService.getInt("workload", "overtimeWarningHours", 10);
         String risk = body.get("riskLevel") != null
@@ -864,8 +867,8 @@ public class WellnessService {
             departmentName = departmentNames.getOrDefault(staff.getDepartmentId(), "");
         }
         Map<String, Object> alert = new LinkedHashMap<>();
-        alert.put("userId", user.getId());
-        alert.put("email", user.getEmail());
+        alert.put("userId", user != null ? user.getId() : null);
+        alert.put("email", user != null && user.getEmail() != null ? user.getEmail() : staff.getEmail());
         alert.put("staffId", staff.getId());
         alert.put("staff", staff.getName());
         alert.put("department", departmentName);
@@ -873,6 +876,23 @@ public class WellnessService {
         alert.put("overtime", Math.round(record.getOvertime()));
         alert.put("id", staff.getId() + "-" + record.getId());
         return alert;
+    }
+
+    private void ensureStaffHasEmail(Staff staff) {
+        if (staff.getEmail() != null && !staff.getEmail().isBlank()) return;
+        String base = staff.getName() != null
+            ? staff.getName().toLowerCase().replaceAll("[^a-z0-9]+", ".").replaceAll("^\\.+|\\.+$", "")
+            : "staff";
+        if (base.isBlank()) base = "staff";
+        String email = base + "@hospital.org";
+        int suffix = 1;
+        while (userRepository.findByEmail(email).isPresent()
+            || staffRepository.findByEmailIgnoreCase(email).filter(s -> !s.getId().equals(staff.getId())).isPresent()) {
+            email = base + suffix + "@hospital.org";
+            suffix++;
+        }
+        staff.setEmail(email);
+        staffRepository.save(staff);
     }
 
     private Map<String, Object> toRecordInfo(WellnessRecord record) {

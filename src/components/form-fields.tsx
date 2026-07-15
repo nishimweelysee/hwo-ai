@@ -25,11 +25,11 @@ export function TextField({
   );
 }
 
-import { SearchableSelect } from "@/components/searchable-select";
+import { SearchableSelect, type LoadOptionsResult } from "@/components/searchable-select";
 import type { SearchableOption } from "@/lib/searchable-options";
 
 export { SearchableSelect };
-export type { SearchableOption };
+export type { SearchableOption, LoadOptionsResult };
 
 export function SearchableSelectField({
   label,
@@ -38,15 +38,21 @@ export function SearchableSelectField({
   onChange,
   hint,
   placeholder,
-  pageSize,
+  pageSize = 10,
+  loadOptions,
 }: {
   label: string;
   value: string;
-  options: SearchableOption[];
+  options?: SearchableOption[];
   onChange: (v: string) => void;
   hint?: string;
   placeholder?: string;
   pageSize?: number;
+  loadOptions?: (args: {
+    search: string;
+    page: number;
+    pageSize: number;
+  }) => Promise<LoadOptionsResult>;
 }) {
   return (
     <SearchableSelect
@@ -57,6 +63,7 @@ export function SearchableSelectField({
       hint={hint}
       placeholder={placeholder}
       pageSize={pageSize}
+      loadOptions={loadOptions}
     />
   );
 }

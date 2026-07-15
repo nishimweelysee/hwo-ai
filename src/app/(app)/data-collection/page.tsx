@@ -19,9 +19,7 @@ import { useWorkforceCatalog } from "@/hooks/use-workforce-catalog";
 import { usePermissions } from "@/hooks/use-permissions";
 import { integrationStatusClass } from "@/lib/integration-status";
 import { TextField, SelectField } from "@/components/form-fields";
-import { filterStaffRows } from "@/lib/searchable-options";
 import { ListSearchBar } from "@/components/list-search-bar";
-import { usePagination } from "@/hooks/use-pagination";
 import { Pagination } from "@/components/pagination";
 import { writableSettingsPayload, SYNC_FREQUENCY_OPTIONS } from "@/lib/settings-config";
 
@@ -121,15 +119,16 @@ export default function DataCollectionPage() {
 
   const [staffRows, setStaffRows] = useState<StaffRow[]>([]);
   const [staffSearch, setStaffSearch] = useState("");
+  const [staffPage, setStaffPage] = useState(1);
+  const [staffPageSize, setStaffPageSize] = useState(10);
+  const [staffTotalItems, setStaffTotalItems] = useState(0);
+  const [staffTotalPages, setStaffTotalPages] = useState(1);
 
   const [syncFrequency, setSyncFrequency] = useState("daily");
   const [syncTimeUtc, setSyncTimeUtc] = useState("02:00");
 
   const templates = meta?.templates ?? [];
   const validation = meta?.validationSummary ?? { valid: 0, duplicates: 0, missing: 0, quality: 0 };
-
-  const filteredStaff = useMemo(() => filterStaffRows(staffRows, staffSearch), [staffRows, staffSearch]);
-  const staffPagination = usePagination(filteredStaff, 15, staffSearch);
 
   const loadMeta = useCallback(async () => {
     setLoading(true);
@@ -172,16 +171,24 @@ export default function DataCollectionPage() {
 
   const loadStaff = useCallback(async () => {
     try {
-      const res = await apiFetch("/api/staff");
+      const params = new URLSearchParams({
+        page: String(staffPage),
+        pageSize: String(staffPageSize),
+      });
+      if (staffSearch.trim()) params.set("search", staffSearch.trim());
+      const res = await apiFetch(`/api/staff?${params}`);
       if (!res.ok) {
         setError(await parseApiError(res, "Failed to load staff"));
         return;
       }
-      setStaffRows(await res.json());
+      const data = await res.json();
+      setStaffRows(Array.isArray(data.items) ? data.items : Array.isArray(data) ? data : []);
+      setStaffTotalItems(Number(data.totalItems ?? 0));
+      setStaffTotalPages(Number(data.totalPages ?? 1));
     } catch {
       setError("Failed to load staff");
     }
-  }, []);
+  }, [staffPage, staffPageSize, staffSearch]);
 
   useEffect(() => {
     loadMeta();
@@ -191,6 +198,10 @@ export default function DataCollectionPage() {
     if (tab === "history") loadHistory();
     if (tab === "staff") loadStaff();
   }, [tab, loadHistory, loadStaff]);
+
+  useEffect(() => {
+    setStaffPage(1);
+  }, [staffSearch]);
 
   const flash = (msg: string) => {
     setSuccess(msg);
@@ -489,7 +500,7 @@ export default function DataCollectionPage() {
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <h3 className="font-semibold text-slate-800">Staff roster ({filteredStaff.length})</h3>
+              <h3 className="font-semibold text-slate-800">Staff roster ({staffTotalItems})</h3>
               <ListSearchBar
                 value={staffSearch}
                 onChange={setStaffSearch}
@@ -497,7 +508,7 @@ export default function DataCollectionPage() {
                 className="sm:max-w-sm"
               />
             </div>
-            {filteredStaff.length === 0 ? (
+            {staffRows.length === 0 ? (
               <p className="text-sm text-slate-500">No staff records. Import a staff CSV or add manually.</p>
             ) : (
               <div className="overflow-x-auto">
@@ -511,7 +522,7 @@ export default function DataCollectionPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {staffPagination.paginatedItems.map((s) => (
+                    {staffRows.map((s) => (
                       <tr key={s.id} className="border-b border-slate-100">
                         <td className="py-2 pr-3 font-medium text-slate-800">{s.name}</td>
                         <td className="py-2 pr-3 text-slate-600">{s.email || "—"}</td>
@@ -523,12 +534,15 @@ export default function DataCollectionPage() {
                 </table>
                 <Pagination
                   className="mt-4"
-                  page={staffPagination.page}
-                  pageSize={staffPagination.pageSize}
-                  totalItems={staffPagination.totalItems}
-                  totalPages={staffPagination.totalPages}
-                  onPageChange={staffPagination.setPage}
-                  onPageSizeChange={staffPagination.setPageSize}
+                  page={staffPage}
+                  pageSize={staffPageSize}
+                  totalItems={staffTotalItems}
+                  totalPages={staffTotalPages}
+                  onPageChange={setStaffPage}
+                  onPageSizeChange={(size) => {
+                    setStaffPageSize(size);
+                    setStaffPage(1);
+                  }}
                 />
               </div>
             )}

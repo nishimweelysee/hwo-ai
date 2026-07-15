@@ -12,9 +12,7 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
-import { filterStaffRows, type StaffLike } from "@/lib/searchable-options";
 import { ListSearchBar } from "@/components/list-search-bar";
-import { usePagination } from "@/hooks/use-pagination";
 import { Pagination } from "@/components/pagination";
 import {
   BarChart,
@@ -697,6 +695,10 @@ function StaffDrillDown() {
   const [staff, setStaff] = useState<DrillStaff[]>([]);
   const [deptFilter, setDeptFilter] = useState("");
   const [staffSearch, setStaffSearch] = useState("");
+  const [staffPage, setStaffPage] = useState(1);
+  const [staffPageSize, setStaffPageSize] = useState(10);
+  const [staffTotalItems, setStaffTotalItems] = useState(0);
+  const [staffTotalPages, setStaffTotalPages] = useState(1);
   const [departments, setDepartments] = useState<{ id: string; name: string }[]>([]);
   const [loadingStaff, setLoadingStaff] = useState(true);
 
@@ -707,30 +709,31 @@ function StaffDrillDown() {
   }, []);
 
   useEffect(() => {
+    setStaffPage(1);
+  }, [deptFilter, staffSearch]);
+
+  useEffect(() => {
     setLoadingStaff(true);
-    const params = new URLSearchParams({ wellness: "true", limit: "500" });
+    const params = new URLSearchParams({
+      wellness: "true",
+      page: String(staffPage),
+      pageSize: String(staffPageSize),
+    });
     if (deptFilter) params.set("departmentId", deptFilter);
+    if (staffSearch.trim()) params.set("search", staffSearch.trim());
     apiFetch(`/api/staff?${params}`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then(setStaff)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (!data) {
+          setStaff([]);
+          return;
+        }
+        setStaff(Array.isArray(data.items) ? data.items : Array.isArray(data) ? data : []);
+        setStaffTotalItems(Number(data.totalItems ?? 0));
+        setStaffTotalPages(Number(data.totalPages ?? 1));
+      })
       .finally(() => setLoadingStaff(false));
-  }, [deptFilter]);
-
-  const filteredStaff = useMemo(() => {
-    const rows: StaffLike[] = staff.map((s) => ({
-      id: s.id ?? s.name,
-      name: s.name,
-      email: s.email,
-      role: s.role,
-      department: s.department?.name,
-      departmentId: s.departmentId,
-    }));
-    const bySearch = filterStaffRows(rows, staffSearch);
-    const idSet = new Set(bySearch.map((s) => s.id));
-    return staff.filter((s) => idSet.has(s.id ?? s.name));
-  }, [staff, staffSearch]);
-
-  const staffPagination = usePagination(filteredStaff, 10, `${deptFilter}-${staffSearch}`);
+  }, [deptFilter, staffSearch, staffPage, staffPageSize]);
 
   return (
     <div>
@@ -761,7 +764,7 @@ function StaffDrillDown() {
         <div className="flex items-center gap-2 text-sm text-slate-500">
           <Loader2 className="h-4 w-4 animate-spin" /> Loading staff…
         </div>
-      ) : filteredStaff.length === 0 ? (
+      ) : staff.length === 0 ? (
         <p className="text-sm text-slate-500">No staff match your filters.</p>
       ) : (
         <>
@@ -777,11 +780,11 @@ function StaffDrillDown() {
                 </tr>
               </thead>
               <tbody>
-                {staffPagination.paginatedItems.map((s, i) => (
+                {staff.map((s, i) => (
                   <tr key={s.id ?? `${s.name}-${i}`} className="border-b border-slate-100 hover:bg-slate-50/60 transition-colors">
                     <td className="py-2.5 pr-4 font-medium text-slate-800">{s.name}</td>
                     <td className="py-2.5 pr-4 text-slate-600">{s.role}</td>
-                    <td className="py-2.5 pr-4 text-slate-600">{s.department.name}</td>
+                    <td className="py-2.5 pr-4 text-slate-600">{s.department?.name}</td>
                     <td className="py-2.5 pr-4">
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -805,12 +808,15 @@ function StaffDrillDown() {
           </div>
           <Pagination
             className="mt-3"
-            page={staffPagination.page}
-            pageSize={staffPagination.pageSize}
-            totalItems={staffPagination.totalItems}
-            totalPages={staffPagination.totalPages}
-            onPageChange={staffPagination.setPage}
-            onPageSizeChange={staffPagination.setPageSize}
+            page={staffPage}
+            pageSize={staffPageSize}
+            totalItems={staffTotalItems}
+            totalPages={staffTotalPages}
+            onPageChange={setStaffPage}
+            onPageSizeChange={(size) => {
+              setStaffPageSize(size);
+              setStaffPage(1);
+            }}
           />
         </>
       )}
