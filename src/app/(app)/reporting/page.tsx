@@ -9,9 +9,12 @@ import {
   Layout,
   Heart,
   CalendarDays,
+  Calendar,
   Printer,
   X,
   Eye,
+  ClipboardList,
+  TrendingUp,
 } from "lucide-react";
 import { ReportHeader } from "@/components/reports/ReportHeader";
 import { PrintReportModal } from "@/components/reports/PrintReportModal";
@@ -176,23 +179,21 @@ export default function ReportingPage() {
           <div className="flex items-start gap-3">
             <div className="rounded-lg bg-amber-100 p-2"><TrendingUp className="h-5 w-5 text-amber-600" /></div>
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Depts benchmarked</p>
-              <p className="mt-1 text-2xl font-bold text-slate-800">{benchmarks.length}</p>
-              <p className="mt-1 text-xs text-slate-400">vs workload target</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Report types</p>
+              <p className="mt-1 text-2xl font-bold text-slate-800">{reportTypes.length}</p>
+              <p className="mt-1 text-xs text-slate-400">Operational, strategic, wellness, scheduling</p>
             </div>
           </div>
         </div>
         <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex items-start gap-3">
-            <div className={`rounded-lg p-2 ${benchmarks.filter(b => b.status !== "compliant").length > 0 ? "bg-rose-100" : "bg-emerald-100"}`}>
-              <Heart className={`h-5 w-5 ${benchmarks.filter(b => b.status !== "compliant").length > 0 ? "text-rose-600" : "text-emerald-600"}`} />
+            <div className="rounded-lg bg-emerald-100 p-2">
+              <Heart className="h-5 w-5 text-emerald-600" />
             </div>
             <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Depts above target</p>
-              <p className={`mt-1 text-2xl font-bold ${benchmarks.filter(b => b.status !== "compliant").length > 0 ? "text-rose-700" : "text-slate-800"}`}>
-                {benchmarks.filter(b => b.status !== "compliant").length}
-              </p>
-              <p className="mt-1 text-xs text-slate-400">Workload exceeding limit</p>
+              <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Export formats</p>
+              <p className="mt-1 text-2xl font-bold text-slate-800">3</p>
+              <p className="mt-1 text-xs text-slate-400">PDF, Excel, CSV</p>
             </div>
           </div>
         </div>
