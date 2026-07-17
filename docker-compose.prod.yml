@@ -14,7 +14,7 @@ services:
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: 123
-      POSTGRES_DB: hwo
+      POSTGRES_DB: hwo2
     ports:
       - "5434:5432"
     volumes:
@@ -39,7 +39,7 @@ services:
       SERVER_PORT: 8080
       DB_HOST: hwo_postgres
       DB_PORT: 5432
-      DB_NAME: hwo
+      DB_NAME: hwo2
       DB_USER: postgres
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       JWT_SECRET: ${JWT_SECRET:-your-256-bit-secret-change-in-production-must-be-at-least-32-chars}

@@ -48,28 +48,43 @@ public final class RolePermissions {
     /** Initial DB seed only — runtime roles come from Configuration → Application user roles. */
     public static Map<String, List<String>> seedRoleMenus() {
         Map<String, List<String>> roles = new LinkedHashMap<>();
+
+        // 1. Administrator — full platform access
         roles.put("Admin", List.of(ALL));
+
+        // 2. Manager — departmental operations: schedules, workload, reports
         roles.put("Manager", List.of(
             "dashboard", "data-collection", "workload-analysis", "ai-prediction", "scheduling",
-            "reporting", "wellness", "resources", "skills", "mobile", "compliance", "profile"
+            "reporting", "wellness", "resources", "skills", "mobile", "compliance",
+            "audit", "data-management", "profile"
         ));
+
+        // 3. Analyst — data & AI model management: workload, wellness, burnout, AI models
         roles.put("Analyst", List.of(
-            "dashboard", "workload-analysis", "ai-prediction", "reporting", "wellness", "compliance", "profile"
+            "dashboard", "data-collection", "workload-analysis", "ai-prediction",
+            "reporting", "wellness", "compliance", "skills", "scheduling", "profile"
         ));
-        roles.put("Scheduler", List.of(
+
+        // 4. Staff — frontline healthcare worker: mobile-first, own schedule & wellness
+        roles.put("Staff", List.of(
             "dashboard", "scheduling", "wellness", "mobile", "profile"
         ));
-        roles.put("Viewer", List.of("dashboard", "reporting", "profile"));
+
+        // 5. Viewer — read-only oversight: reports and dashboards only
+        roles.put("Viewer", List.of(
+            "dashboard", "workload-analysis", "reporting", "wellness", "scheduling", "profile"
+        ));
+
         return roles;
     }
 
     public static Map<String, List<String>> seedRoleActions() {
         Map<String, List<String>> roles = new LinkedHashMap<>();
-        roles.put("Admin", List.of(ALL));
-        roles.put("Manager", List.of(ACTION_SETTINGS_MANAGE));
-        roles.put("Analyst", List.of());
-        roles.put("Scheduler", List.of());
-        roles.put("Viewer", List.of());
+        roles.put("Admin",   List.of(ALL));
+        roles.put("Manager", List.of(ACTION_SETTINGS_MANAGE, ACTION_AUDIT_EXPORT, ACTION_DATA_MANAGE));
+        roles.put("Analyst", List.of(ACTION_AUDIT_EXPORT));
+        roles.put("Staff",   List.of());
+        roles.put("Viewer",  List.of());
         return roles;
     }
 
@@ -84,7 +99,7 @@ public final class RolePermissions {
     }
 
     public static Set<String> knownRoles() {
-        return seedRoleMenus().keySet();
+        return Set.of("Admin", "Manager", "Analyst", "Staff", "Viewer");
     }
 
     public static List<Map<String, String>> actionCatalog() {

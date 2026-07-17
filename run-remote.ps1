@@ -201,7 +201,9 @@ function Ensure-WebProdBuild([string]$BackendUrl) {
   Push-Location $Root
   try {
     $env:BACKEND_API_URL = $BackendUrl
+    $prevEap = $ErrorActionPreference; $ErrorActionPreference = "Continue"
     & $NpmBin run build *>$buildLog
+    $ErrorActionPreference = $prevEap
     if ($LASTEXITCODE -ne 0) {
       Fail "Next.js build failed - see $buildLog"
       Show-LogTail "web-build"
@@ -464,20 +466,26 @@ tunnels:
     Push-Location (Join-Path $Root "mobile")
     try {
       Set-Item -Path "Env:$MobileEnvVar" -Value $MobileEnvVal
+      # Clear Metro bundler cache to avoid deserialization errors
+      Remove-Item -Recurse -Force ".expo" -ErrorAction SilentlyContinue
+      Remove-Item -Recurse -Force "node_modules\.cache" -ErrorAction SilentlyContinue
       switch ($MobileMode) {
         "ngrok" {
           Log "Starting Expo (mobile) via ngrok Metro tunnel. Scan the QR in Expo Go. Ctrl+C stops everything."
           Log "Metro public URL: $MetroUrl"
           $env:EXPO_PACKAGER_PROXY_URL = $MetroUrl
-          & $NpxBin expo start --port $MetroPort
+          $env:EXPO_NO_DOCTOR = "1"
+          & $NpxBin expo start --port $MetroPort --clear
         }
         "tunnel" {
           Log "Starting Expo (mobile) with Expo's --tunnel. Scan the QR in Expo Go. Ctrl+C stops everything."
-          & $NpxBin expo start --tunnel
+          $env:EXPO_NO_DOCTOR = "1"
+          & $NpxBin expo start --tunnel --clear
         }
         "lan" {
           Log "Starting Expo (mobile) in LAN mode (same Wi-Fi only). Ctrl+C stops everything."
-          & $NpxBin expo start --lan
+          $env:EXPO_NO_DOCTOR = "1"
+          & $NpxBin expo start --lan --clear
         }
         default {
           Fail "Unknown MOBILE_MODE='$MobileMode' (use ngrok|tunnel|lan)"

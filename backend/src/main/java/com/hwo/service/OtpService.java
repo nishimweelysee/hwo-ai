@@ -26,14 +26,17 @@ public class OtpService {
     private final LoginAttemptService attemptService;
 
     public OtpService(OtpTokenRepository otpRepo,
-                      Optional<JavaMailSender> mailSender,
-                      LoginAttemptService attemptService) {
-        this.otpRepo        = otpRepo;
-        this.mailSender     = mailSender.orElse(null);
+            Optional<JavaMailSender> mailSender,
+            LoginAttemptService attemptService) {
+        this.otpRepo = otpRepo;
+        this.mailSender = mailSender.orElse(null);
         this.attemptService = attemptService;
     }
 
-    /** Generate a 6-digit OTP, persist it, and send the email (with rate-limit check). */
+    /**
+     * Generate a 6-digit OTP, persist it, and send the email (with rate-limit
+     * check).
+     */
     public boolean generateAndSend(String email, String purpose) {
         if (attemptService.isOtpBlocked(email, purpose)) {
             return false; // rate limited — caller should tell user to wait
@@ -62,7 +65,7 @@ public class OtpService {
      */
     public boolean validate(String email, String code, String purpose) {
         return otpRepo.findByEmailAndCodeAndPurposeAndUsedFalse(
-                        email.toLowerCase().trim(), code, purpose)
+                email.toLowerCase().trim(), code, purpose)
                 .filter(t -> Instant.now().isBefore(t.getExpiresAt()))
                 .map(t -> {
                     t.setUsed(true);
@@ -77,7 +80,7 @@ public class OtpService {
     private void sendEmail(String to, String purpose, String code) {
         String subject;
         String body;
-
+        System.out.println("Sending OTP email to " + to + " for purpose " + purpose + " with code " + code);
         if ("PASSWORD_RESET".equals(purpose)) {
             subject = "HWO — Your password reset code";
             body = "Your password reset code is: " + code

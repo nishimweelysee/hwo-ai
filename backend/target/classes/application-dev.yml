@@ -1,6 +1,6 @@
 # Development profile - use H2 if PostgreSQL not available
 spring:
   datasource:
-    url: jdbc:postgresql://localhost:5432/hwo
+    url: jdbc:postgresql://localhost:5432/hwo2
     username: postgres
     password: 123

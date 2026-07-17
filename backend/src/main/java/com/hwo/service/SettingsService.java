@@ -625,6 +625,37 @@ public class SettingsService {
                 saveSection(key, defaults);
             }
         });
+        migrateSchedulerRoleToStaff();
+    }
+
+    /** One-time migration: replace the legacy "Scheduler" role with "Staff" in stored userRoles. */
+    @SuppressWarnings("unchecked")
+    private void migrateSchedulerRoleToStaff() {
+        appSettingRepository.findById("userRoles").ifPresent(setting -> {
+            Map<String, Object> stored = parseJson(setting.getValue());
+            Object itemsRaw = stored.get("items");
+            if (!(itemsRaw instanceof List<?> list)) return;
+
+            boolean changed = false;
+            List<Map<String, Object>> items = new java.util.ArrayList<>();
+            for (Object item : list) {
+                if (!(item instanceof Map<?, ?> map)) continue;
+                Map<String, Object> row = new LinkedHashMap<>((Map<String, Object>) map);
+                String name = String.valueOf(row.getOrDefault("name", ""));
+                if ("Scheduler".equalsIgnoreCase(name)) {
+                    row.put("id",          "role-staff");
+                    row.put("name",        "Staff");
+                    row.put("description", "View schedules, submit wellness check-ins, request shift swaps, and receive alerts via mobile.");
+                    row.put("userType",    "scheduling");
+                    changed = true;
+                }
+                items.add(row);
+            }
+            if (changed) {
+                stored.put("items", items);
+                saveSection("userRoles", stored);
+            }
+        });
     }
 
     private Map<String, Object> getStoredSection(String section) {
@@ -989,16 +1020,21 @@ public class SettingsService {
         Map<String, Object> userRoles = new LinkedHashMap<>();
         userRoles.put("defaultRole", "Analyst");
         userRoles.put("items", List.of(
-            userRoleItem("role-admin", "Admin", "Full system configuration and user management", true,
-                "it", false, false, false, false, false),
-            userRoleItem("role-manager", "Manager", "Department oversight, scheduling, and reporting", true,
-                "it", true, true, true, true, true),
-            userRoleItem("role-analyst", "Analyst", "Workload analysis and operational reporting", true,
-                "operational", true, false, true, false, true),
-            userRoleItem("role-scheduler", "Scheduler", "Shift planning and staff roster management", true,
-                "scheduling", true, true, false, true, true),
-            userRoleItem("role-viewer", "Viewer", "Read-only access to dashboards and reports", true,
-                "readonly", false, false, false, false, true)
+            userRoleItem("role-admin", "Admin",
+                "Manage all accounts, institutions, and system-wide configuration; ensure security and data integrity.",
+                true, "it", false, false, false, false, false),
+            userRoleItem("role-manager", "Manager",
+                "Create, publish, and adjust schedules; approve shift swaps; oversee department workload and reports.",
+                true, "it", true, true, true, true, true),
+            userRoleItem("role-analyst", "Analyst",
+                "Retrain and compare AI models; analyze workload, wellness, and burnout trends across facilities.",
+                true, "operational", true, false, true, false, true),
+            userRoleItem("role-staff", "Staff",
+                "View schedules, submit wellness check-ins, request shift swaps, and receive alerts via mobile.",
+                true, "scheduling", true, true, false, true, true),
+            userRoleItem("role-viewer", "Viewer",
+                "Monitor workforce reports and dashboards for institutional visibility without edit access.",
+                true, "readonly", false, false, false, false, true)
         ));
         defaults.put("userRoles", userRoles);
 

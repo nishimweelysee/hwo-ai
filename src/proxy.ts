@@ -1,19 +1,26 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const publicPaths = ["/", "/login", "/register", "/forgot-password", "/reset-password", "/verify-email"];
+const publicPaths = [
+  "/",
+  "/login",
+  "/register",
+  "/forgot-password",
+  "/reset-password",
+  "/verify-email",
+];
 
 export async function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  if (publicPaths.includes(pathname)) return NextResponse.next();
 
-  const token = req.cookies.get("hwo_token")?.value;
-  if (!token) {
-    const url = new URL("/login", req.url);
-    url.searchParams.set("callbackUrl", pathname);
-    return NextResponse.redirect(url);
+  // Allow public paths and all API/asset routes
+  if (publicPaths.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
+    return NextResponse.next();
   }
 
+  // Auth is handled client-side via localStorage JWT.
+  // Middleware just passes all requests through — RouteGuard in the
+  // (app) layout handles redirecting unauthenticated users to /login.
   return NextResponse.next();
 }
 

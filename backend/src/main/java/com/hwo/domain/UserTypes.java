@@ -11,7 +11,7 @@ import java.util.Set;
 public final class UserTypes {
 
     public static final Set<String> IT_ROLES = Set.of("Admin", "Manager");
-    public static final Set<String> SCHEDULING_ROLES = Set.of("Scheduler", "Manager", "Admin");
+    public static final Set<String> SCHEDULING_ROLES = Set.of("Staff", "Manager", "Admin");
     public static final Set<String> SELF_REGISTER_BLOCKED = Set.of("Admin");
 
     private UserTypes() {}
@@ -39,7 +39,7 @@ public final class UserTypes {
     public static List<Map<String, Object>> metaDefinitions() {
         return List.of(
             Map.of("id", "it", "label", "IT & Management", "roles", List.of("Admin", "Manager")),
-            Map.of("id", "scheduling", "label", "Scheduling & Operations", "roles", List.of("Scheduler", "Manager")),
+            Map.of("id", "scheduling", "label", "Scheduling & Operations", "roles", List.of("Staff", "Manager")),
             Map.of("id", "operational", "label", "Analysis & Reporting", "roles", List.of("Analyst")),
             Map.of("id", "readonly", "label", "Read-only", "roles", List.of("Viewer"))
         );

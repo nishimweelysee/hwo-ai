@@ -8,7 +8,6 @@ import com.hwo.repository.DepartmentRepository;
 import com.hwo.repository.UserRepository;
 import com.hwo.security.JwtService;
 import com.hwo.service.LoginAttemptService;
-import com.hwo.service.OtpService;
 import com.hwo.service.SettingsService;
 import com.hwo.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -32,7 +31,6 @@ public class AuthController {
     private final JwtService jwtService;
     private final SettingsService settingsService;
     private final UserService userService;
-    private final OtpService otpService;
     private final LoginAttemptService loginAttemptService;
     private final AuditLogRepository auditLogRepository;
 
@@ -42,7 +40,6 @@ public class AuthController {
                           JwtService jwtService,
                           SettingsService settingsService,
                           UserService userService,
-                          OtpService otpService,
                           LoginAttemptService loginAttemptService,
                           AuditLogRepository auditLogRepository) {
         this.userRepository      = userRepository;
@@ -51,7 +48,6 @@ public class AuthController {
         this.jwtService          = jwtService;
         this.settingsService     = settingsService;
         this.userService         = userService;
-        this.otpService          = otpService;
         this.loginAttemptService = loginAttemptService;
         this.auditLogRepository  = auditLogRepository;
     }
@@ -126,12 +122,7 @@ public class AuthController {
             String ip = getClientIp(request);
             audit(savedUser.getId(), "REGISTER", "AUTH", "New account: " + savedUser.getEmail(), ip);
 
-            // Send email verification OTP
-            otpService.generateAndSend(savedUser.getEmail(), "EMAIL_VERIFY");
-
-            Map<String, Object> resp = authResponseBody(savedUser);
-            resp.put("emailVerificationSent", true);
-            return ResponseEntity.ok(resp);
+            return ResponseEntity.ok(authResponseBody(savedUser));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
@@ -166,116 +157,6 @@ public class AuthController {
         return login(body, request);
     }
 
-    @PostMapping("/forgot-password")
-    public ResponseEntity<?> forgotPassword(@RequestBody Map<String, String> body,
-                                            HttpServletRequest request) {
-        String email = body.get("email");
-        if (email == null || email.isBlank())
-            return ResponseEntity.badRequest().body(Map.of("error", "Email required"));
-
-        String ip = getClientIp(request);
-
-        // Check OTP rate limit before looking up the user
-        if (loginAttemptService.isOtpBlocked(email, "PASSWORD_RESET")) {
-            long wait = loginAttemptService.secondsUntilOtpUnlock(email, "PASSWORD_RESET");
-            return ResponseEntity.status(429).body(Map.of(
-                "error", "Too many code requests. Try again in " + (wait / 60 + 1) + " minute(s)."));
-        }
-
-        userRepository.findByEmail(email.toLowerCase().trim())
-                .filter(User::isActive)
-                .ifPresent(u -> {
-                    boolean sent = otpService.generateAndSend(u.getEmail(), "PASSWORD_RESET");
-                    if (sent) audit(u.getId(), "PASSWORD_RESET_REQUESTED", "AUTH",
-                                    "Reset code sent to " + u.getEmail(), ip);
-                });
-
-        return ResponseEntity.ok(Map.of("message", "If the email exists, a reset code has been sent"));
-    }
-
-    @PostMapping("/verify-otp")
-    public ResponseEntity<?> verifyOtp(@RequestBody Map<String, String> body) {
-        String email   = body.get("email");
-        String code    = body.get("code");
-        String purpose = body.getOrDefault("purpose", "PASSWORD_RESET");
-
-        if (email == null || code == null)
-            return ResponseEntity.badRequest().body(Map.of("error", "Email and code required"));
-
-        boolean valid = otpService.validate(email, code, purpose);
-        if (!valid)
-            return ResponseEntity.status(400).body(Map.of("error", "Invalid or expired code"));
-
-        return ResponseEntity.ok(Map.of("valid", true));
-    }
-
-    @PostMapping("/reset-password")
-    public ResponseEntity<?> resetPassword(@RequestBody Map<String, String> body,
-                                           HttpServletRequest request) {
-        String email    = body.get("email");
-        String code     = body.get("code");
-        String password = body.get("password");
-
-        if (email == null || code == null || password == null)
-            return ResponseEntity.badRequest().body(Map.of("error", "Email, code, and password required"));
-
-        String pwError = validatePassword(password);
-        if (pwError != null)
-            return ResponseEntity.badRequest().body(Map.of("error", pwError));
-
-        boolean valid = otpService.validate(email, code, "PASSWORD_RESET");
-        if (!valid)
-            return ResponseEntity.status(400).body(Map.of("error", "Invalid or expired code"));
-
-        return userRepository.findByEmail(email.toLowerCase().trim())
-                .map(u -> {
-                    u.setPassword(passwordEncoder.encode(password));
-                    userRepository.save(u);
-                    audit(u.getId(), "PASSWORD_RESET", "AUTH",
-                          "Password reset for " + u.getEmail(), getClientIp(request));
-                    return ResponseEntity.ok(Map.of("message", "Password updated successfully"));
-                })
-                .orElse(ResponseEntity.status(404).body(Map.of("error", "Account not found")));
-    }
-
-    @PostMapping("/send-verification")
-    public ResponseEntity<?> sendVerification(@RequestBody Map<String, String> body) {
-        String email = body.get("email");
-        if (email == null || email.isBlank())
-            return ResponseEntity.badRequest().body(Map.of("error", "Email required"));
-
-        if (loginAttemptService.isOtpBlocked(email, "EMAIL_VERIFY")) {
-            long wait = loginAttemptService.secondsUntilOtpUnlock(email, "EMAIL_VERIFY");
-            return ResponseEntity.status(429).body(Map.of(
-                "error", "Too many code requests. Try again in " + (wait / 60 + 1) + " minute(s)."));
-        }
-
-        userRepository.findByEmail(email.toLowerCase().trim())
-                .filter(User::isActive)
-                .ifPresent(u -> otpService.generateAndSend(u.getEmail(), "EMAIL_VERIFY"));
-
-        return ResponseEntity.ok(Map.of("message", "Verification code sent"));
-    }
-
-    @PostMapping("/verify-email")
-    public ResponseEntity<?> verifyEmail(@RequestBody Map<String, String> body,
-                                         HttpServletRequest request) {
-        String email = body.get("email");
-        String code  = body.get("code");
-
-        if (email == null || code == null)
-            return ResponseEntity.badRequest().body(Map.of("error", "Email and code required"));
-
-        boolean valid = otpService.validate(email, code, "EMAIL_VERIFY");
-        if (!valid)
-            return ResponseEntity.status(400).body(Map.of("error", "Invalid or expired code"));
-
-        userRepository.findByEmail(email.toLowerCase().trim())
-                .ifPresent(u -> audit(u.getId(), "EMAIL_VERIFIED", "AUTH",
-                                      "Email verified: " + u.getEmail(), getClientIp(request)));
-
-        return ResponseEntity.ok(Map.of("verified", true));
-    }
 
     private ResponseEntity<Map<String, Object>> authResponse(User user) {
         return ResponseEntity.ok(authResponseBody(user));
